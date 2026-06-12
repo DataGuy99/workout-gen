@@ -1,382 +1,472 @@
 import{useState,useEffect,useCallback,useMemo}from"react";
 import{MUSCLES,EXERCISES}from"./exercises.js";
 
-// ── Storage ──
 const ld=(k,fb)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):fb}catch{return fb}};
 const sv=(k,d)=>{try{localStorage.setItem(k,JSON.stringify(d))}catch(e){console.error(e)}};
-const SK={anchors:"wg-anchors",anchorLog:"wg-anchor-log",accLog:"wg-acc-log",fatigue:"wg-fatigue",current:"wg-current",
-  settings:"wg-settings",banned:"wg-banned",prefs:"wg-prefs",exLog:"wg-ex-log",muscleTrends:"wg-muscle-trends",
-  nutrition:"wg-nutrition",body:"wg-body",cardio:"wg-cardio"};
+const SK={anchors:"wg2-anchors",anchorLog:"wg2-anchor-log",accLog:"wg2-acc-log",fatigue:"wg2-fatigue",
+  banned:"wg2-banned",prefs:"wg2-prefs",nutrition:"wg2-nutrition",body:"wg2-body",cardio:"wg2-cardio",
+  meso:"wg2-meso",settings:"wg2-settings",history:"wg2-history"};
 const mono="'JetBrains Mono','Fira Code',monospace";
 const FC=["#22c55e","#84cc16","#eab308","#f97316","#ef4444"];
-const RPEC={6:"#22c55e",7:"#84cc16",8:"#eab308",9:"#f97316",10:"#ef4444"};
-const FL=["Fresh","Low","Mod","High","Wrecked"];
+const FL=["Fresh","Low","Mod","High","Wreck"];
+const PAIN_C=v=>v<=2?"#22c55e":v<=5?"#eab308":"#ef4444";
+const PAIN_L=v=>v<=2?"GREEN":v<=5?"AMBER":"RED";
+const RIR_C=v=>v<=1?"#ef4444":v<=2?"#f97316":v<=3?"#eab308":"#22c55e";
 
-// ── Anchor patterns ──
 const PATTERNS=[
-  {id:"hpress",label:"Horizontal Press",desc:"Bench, DB press, push-ups",muscles:["chest","triceps","shoulders"]},
-  {id:"vpress",label:"Vertical Press",desc:"OHP, landmine press, Arnold",muscles:["shoulders","triceps"]},
-  {id:"hpull",label:"Horizontal Pull",desc:"Rows (barbell, DB, chest-supported)",muscles:["back","biceps"]},
-  {id:"vpull",label:"Vertical Pull",desc:"Pull-ups, chin-ups",muscles:["back","biceps"]},
-  {id:"squat",label:"Squat Pattern",desc:"Belt squat, landmine squat, goblet",muscles:["quads","glutes"]},
-  {id:"hinge",label:"Hip Hinge",desc:"RDL, hip thrust, deadlift",muscles:["hamstrings","glutes","back"]},
+  {id:"hpress",label:"H. Press",full:"Horizontal Press",muscles:["chest","triceps","shoulders"]},
+  {id:"vpress",label:"V. Press",full:"Vertical Press",muscles:["shoulders","triceps"]},
+  {id:"hpull",label:"H. Pull",full:"Horizontal Pull",muscles:["back","biceps"]},
+  {id:"vpull",label:"V. Pull",full:"Vertical Pull",muscles:["back","biceps"]},
+  {id:"squat",label:"Squat",full:"Squat Pattern",muscles:["quads","glutes"]},
+  {id:"hinge",label:"Hinge",full:"Hip Hinge",muscles:["hamstrings","glutes","back"]},
 ];
-
-// Map exercises to patterns
 const PATTERN_MAP={
-  hpress:["Dumbbell Bench Press","Incline Dumbbell Press","Decline Dumbbell Press","Dumbbell Floor Press","Dumbbell Squeeze Press","Push-ups","Dips","Close-grip Barbell Bench","Diamond Push-ups","Decline Push-ups"],
+  hpress:["Dumbbell Bench Press","Incline Dumbbell Press","Decline Dumbbell Press","Dumbbell Floor Press","Push-ups","Dips","Close-grip Barbell Bench","Diamond Push-ups"],
   vpress:["Barbell Overhead Press","Dumbbell Arnold Press","Landmine Press","Single-arm Landmine Press","Pike Push-ups"],
   hpull:["Barbell Rows","Pendlay Rows","Dumbbell Rows","Chest-supported Incline DB Rows","Meadow Rows","Inverted Rows"],
   vpull:["Pull-ups","Chin-ups","Wide-grip Pull-ups","Commando Pull-ups"],
-  squat:["Belt Squat","Landmine Squat","Dumbbell Goblet Squat","Dumbbell Bulgarian Split Squat","Dumbbell Lunges","Dumbbell Step-ups","Pistol Squats","Sissy Squats"],
-  hinge:["Barbell Romanian Deadlifts","Dumbbell Romanian Deadlifts","Single-leg DB Romanian Deadlift","Conventional Deadlift","Sumo Deadlift","Barbell Hip Thrusts","B-stance Hip Thrust","Barbell Glute Bridge","Barbell Good Mornings","Nordic Curls"],
+  squat:["Belt Squat","Landmine Squat","Dumbbell Goblet Squat","Dumbbell Bulgarian Split Squat","Dumbbell Lunges","Dumbbell Step-ups","Pistol Squats"],
+  hinge:["Barbell Romanian Deadlifts","Dumbbell Romanian Deadlifts","Single-leg DB Romanian Deadlift","Conventional Deadlift","Sumo Deadlift","Barbell Hip Thrusts","B-stance Hip Thrust","Barbell Good Mornings","Nordic Curls"],
 };
+const ALL_PAT_EX=new Set(Object.values(PATTERN_MAP).flat());
+const ACC_POOL=EXERCISES.filter(e=>!ALL_PAT_EX.has(e.name));
 
-// Accessories = everything not in a pattern
-const ALL_PATTERN_EX=new Set(Object.values(PATTERN_MAP).flat());
-const ACCESSORY_POOL=EXERCISES.filter(e=>!ALL_PATTERN_EX.has(e.name));
+// Day-type nutrition targets
+const DAY_TARGETS={long_ride:{cal:2600,pro:190,carb:280,fat:90},med_ride:{cal:2300,pro:190,carb:210,fat:85},
+  hiit:{cal:2100,pro:190,carb:170,fat:80},lift:{cal:2100,pro:190,carb:170,fat:80},rest:{cal:1800,pro:190,carb:110,fat:75}};
 
-// ── Double progression logic ──
-function getAnchorProgression(name,anchorLog,repRange=[6,10],targetRIR=2){
-  const hist=anchorLog[name];
-  if(!hist||hist.length===0)return{weight:"",reps:repRange[0],sets:3,note:"First session. Find a weight where you hit "+repRange[0]+" reps at RIR "+targetRIR+".",isNew:true};
-  const last=hist[hist.length-1];
-  const lastSets=last.sets.filter(s=>s.reps&&s.weight);
-  if(lastSets.length===0)return{weight:"",reps:repRange[0],sets:3,note:"No logged data last session.",isNew:true};
-  const lastWeight=+lastSets[0].weight;
-  const avgReps=Math.round(lastSets.reduce((s,x)=>s+(+x.reps),0)/lastSets.length);
-  const avgRIR=lastSets.filter(s=>s.rir!==undefined&&s.rir!=="").length>0?
-    Math.round(lastSets.filter(s=>s.rir!==undefined&&s.rir!=="").reduce((s,x)=>s+(+x.rir),0)/lastSets.filter(s=>s.rir!==undefined&&s.rir!=="").length*10)/10:null;
-  // Check if all sets hit top of range at target RIR
-  const allHitTop=lastSets.every(s=>+s.reps>=repRange[1]);
-  const atTargetRIR=avgRIR!==null&&avgRIR<=targetRIR+0.5;
-  if(allHitTop&&atTargetRIR){
-    // Progress: increase weight, drop to bottom of range
-    const inc=lastWeight>=100?5:lastWeight>=40?5:2.5;
-    return{weight:lastWeight+inc,reps:repRange[0],sets:lastSets.length,
-      note:`Hit ${repRange[1]} reps at RIR ${avgRIR}. Weight up +${inc}lb, reset to ${repRange[0]} reps.`,progressed:true};
+// ── PROGRESSION ──
+function getProgression(name,log,repRange=[6,10],targetRIR=2){
+  const h=log[name];
+  if(!h||!h.length)return{weight:"",reps:repRange[0],sets:3,note:`First session. Find weight for ${repRange[0]} reps @ RIR ${targetRIR}.`,isNew:true};
+  const last=h[h.length-1];const ls=last.sets.filter(s=>s.reps&&s.weight);
+  if(!ls.length)return{weight:"",reps:repRange[0],sets:3,note:"No data last session.",isNew:true};
+  const w=+ls[0].weight,avgR=Math.round(ls.reduce((s,x)=>s+(+x.reps),0)/ls.length);
+  const rirsValid=ls.filter(s=>s.rir!=null&&s.rir!=="");
+  const avgRIR=rirsValid.length?Math.round(rirsValid.reduce((s,x)=>s+(+x.rir),0)/rirsValid.length*10)/10:null;
+  const allTop=ls.every(s=>+s.reps>=repRange[1]);
+  const atTarget=avgRIR!==null&&avgRIR<=targetRIR+0.5;
+  // Check for regression (deload signal)
+  if(h.length>=3){
+    const recent3=h.slice(-3);
+    const vols=recent3.map(s=>{const ss=s.sets.filter(x=>x.reps&&x.weight);return ss.reduce((a,x)=>a+(+x.reps)*(+x.weight),0);});
+    if(vols[2]<vols[0]*0.9&&vols[1]<vols[0]*0.95){
+      return{weight:Math.round(w*0.7),reps:repRange[0],sets:ls.length,note:`DELOAD: Performance dropped 3 sessions. Cut to 70% (${Math.round(w*0.7)}lb) for 1 week.`,deload:true};
+    }
   }
-  // RIR correction
-  if(avgRIR!==null&&avgRIR>targetRIR+1){
-    return{weight:lastWeight,reps:Math.min(avgReps+1,repRange[1]),sets:lastSets.length,
-      note:`RIR ${avgRIR} is too easy. Add a rep. Target RIR ${targetRIR}.`,tooEasy:true};
-  }
-  if(avgRIR!==null&&avgRIR<1){
-    return{weight:Math.max(0,lastWeight-5),reps:avgReps,sets:lastSets.length,
-      note:`RIR ${avgRIR} means you went too close to failure. Back off -5lb.`,tooHard:true};
-  }
-  // Default: same weight, try to add a rep
-  return{weight:lastWeight,reps:Math.min(avgReps+1,repRange[1]),sets:lastSets.length,
-    note:`${avgReps} reps last time${avgRIR!==null?` at RIR ${avgRIR}`:""}. Target ${Math.min(avgReps+1,repRange[1])} reps at RIR ${targetRIR}.`};
+  if(allTop&&atTarget){const inc=w>=100?5:w>=40?5:2.5;
+    return{weight:w+inc,reps:repRange[0],sets:ls.length,note:`Hit ${repRange[1]} reps @ RIR ${avgRIR}. UP +${inc}lb, reset to ${repRange[0]}.`,progressed:true};}
+  if(avgRIR!==null&&avgRIR>targetRIR+1)
+    return{weight:w,reps:Math.min(avgR+1,repRange[1]),sets:ls.length,note:`RIR ${avgRIR} too easy. Add rep. Target RIR ${targetRIR}.`,tooEasy:true};
+  if(avgRIR!==null&&avgRIR<1)
+    return{weight:Math.max(0,w-5),reps:avgR,sets:ls.length,note:`RIR ${avgRIR}: too close to failure. Back off -5lb.`,tooHard:true};
+  return{weight:w,reps:Math.min(avgR+1,repRange[1]),sets:ls.length,
+    note:`Last: ${avgR}r x ${w}lb${avgRIR!==null?` @ RIR ${avgRIR}`:""}. Target: ${Math.min(avgR+1,repRange[1])}r @ RIR ${targetRIR}.`};
 }
 
-// ── Accessory generation (existing logic simplified) ──
-function shuffle(a){const b=[...a];for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];}return b;}
+// ── VOLUME TRACKING ──
+function calcWeeklyVolume(anchorLog,accLog,anchors){
+  const vol={};MUSCLES.forEach(m=>vol[m]=0);
+  const weekAgo=Date.now()-7*86400000;
+  // From anchor sessions
+  Object.entries(anchorLog).forEach(([name,entries])=>{
+    entries.filter(e=>new Date(e.date).getTime()>weekAgo).forEach(entry=>{
+      const ex=EXERCISES.find(x=>x.name===name);if(!ex)return;
+      const hardSets=entry.sets.filter(s=>s.reps&&(s.rir==null||s.rir===""||+s.rir<=4)).length;
+      [...ex.p,...ex.s].forEach(({m,p})=>{vol[m]+=hardSets*(p/100);});
+    });
+  });
+  // From accessory log
+  (accLog||[]).filter(e=>new Date(e.date).getTime()>weekAgo).forEach(entry=>{
+    entry.exercises?.forEach(ex=>{
+      const ref=EXERCISES.find(x=>x.name===ex.name);if(!ref)return;
+      const hardSets=ex.sets?.filter(s=>s.reps).length||0;
+      [...ref.p,...ref.s].forEach(({m,p})=>{vol[m]+=hardSets*(p/100);});
+    });
+  });
+  return vol;
+}
 
-function generateAccessories(count,banned,prefs,fatigue){
-  const pool=ACCESSORY_POOL.filter(e=>!banned.includes(e.name));
+// Volume landmarks (approximate, per Israetel)
+const VOL_LANDMARKS={chest:{mev:8,mav:16,mrv:22},back:{mev:8,mav:16,mrv:22},shoulders:{mev:8,mav:16,mrv:26},
+  biceps:{mev:6,mav:14,mrv:20},triceps:{mev:6,mav:12,mrv:18},quads:{mev:6,mav:14,mrv:20},
+  hamstrings:{mev:4,mav:10,mrv:16},glutes:{mev:4,mav:12,mrv:16},calves:{mev:6,mav:12,mrv:16},
+  core:{mev:4,mav:10,mrv:16},traps:{mev:4,mav:10,mrv:16},forearms:{mev:2,mav:8,mrv:14}};
+
+// ── MESOCYCLE ──
+function getMesoState(meso){
+  if(!meso||!meso.startDate)return{week:0,phase:"none"};
+  const weeks=Math.floor((Date.now()-new Date(meso.startDate).getTime())/(7*86400000));
+  const len=meso.length||5;
+  if(weeks>=len)return{week:weeks,phase:"deload"};
+  return{week:weeks+1,phase:"accumulation",totalWeeks:len};
+}
+
+// ── ACCESSORIES ──
+function shuffle(a){const b=[...a];for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];}return b;}
+function genAcc(n,banned,prefs,fatigue,weekVol){
+  const pool=ACC_POOL.filter(e=>!banned.includes(e.name));
   const fw={};MUSCLES.forEach(m=>{const f=fatigue[m]||0;fw[m]=f>=4?0.1:f===3?0.4:f===2?0.7:f===1?0.9:1.0;});
-  const sel=[];const used=new Set();
+  // Prioritize muscles below MEV
+  const underserved=MUSCLES.filter(m=>weekVol[m]<(VOL_LANDMARKS[m]?.mev||6));
   const weighted=shuffle(pool).map(ex=>{
-    const stars=prefs[ex.name]||0;
-    const mult=stars===0?1:stars===1?1.3:stars===2?1.6:2.0;
-    const allM=[...ex.p,...ex.s];
-    const avgFw=allM.reduce((s,{m,p})=>s+fw[m]*(p/100),0);
-    return{ex,weight:mult*avgFw};
-  }).filter(x=>x.weight>0.15).sort((a,b)=>b.weight-a.weight);
+    const stars=prefs[ex.name]||0;const mult=stars===0?1:stars===1?1.3:stars===2?1.6:2.0;
+    const allM=[...ex.p,...ex.s];const avgFw=allM.reduce((s,{m,p})=>s+fw[m]*(p/100),0);
+    const underBoost=allM.some(({m})=>underserved.includes(m))?1.5:1;
+    return{ex,weight:mult*avgFw*underBoost};
+  }).filter(x=>x.weight>0.1).sort((a,b)=>b.weight-a.weight);
+  const sel=[];const used=new Set();
   for(const{ex}of weighted){
-    if(sel.length>=count)break;
-    if(used.has(ex.name))continue;
+    if(sel.length>=n||used.has(ex.name))continue;
+    const sug=getProgression(ex.name,ld(SK.accLog,{})||{},[10,15],2);
     sel.push({id:crypto.randomUUID(),name:ex.name,eq:ex.eq,cat:ex.cat,p:ex.p,s:ex.s,
-      suggestedSets:2,suggestedReps:ex.p.some(x=>x.m==="core")?12:10,
-      sets:[{reps:"",weight:"",rir:""},{reps:"",weight:"",rir:""}],isAccessory:true});
+      sugReps:sug.reps||10,sugWeight:sug.weight||"",locked:false,
+      sets:[{reps:sug.reps||"",weight:sug.weight||"",rir:""},{reps:sug.reps||"",weight:sug.weight||"",rir:""}]});
     used.add(ex.name);
   }
   return sel;
 }
 
-// ── Components ──
-function AnchorSetRow({set,index,onUpdate,onRemove}){
-  const rc=set.rir!==undefined&&set.rir!==""?(+set.rir<=1?"#ef4444":+set.rir<=2?"#f97316":+set.rir<=3?"#eab308":"#22c55e"):"#475569";
-  return(<div style={{display:"flex",alignItems:"center",gap:4,padding:"3px 0"}}>
-    <div style={{width:18,fontSize:9,color:"#64748b",fontFamily:mono}}>{index+1}</div>
-    <input type="number" placeholder="reps" value={set.reps||""} onChange={e=>onUpdate(index,"reps",e.target.value)}
-      style={{flex:1,height:30,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 8px",fontSize:11,fontFamily:mono}}/>
-    <input type="number" placeholder="lbs" value={set.weight||""} onChange={e=>onUpdate(index,"weight",e.target.value)}
-      style={{width:58,height:30,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 8px",fontSize:11,fontFamily:mono}}/>
-    <input type="number" placeholder="RIR" value={set.rir!==undefined?set.rir:""} onChange={e=>onUpdate(index,"rir",e.target.value)}
-      min="0" max="5" style={{width:44,height:30,background:"#1e293b",border:`1px solid ${rc}`,borderRadius:3,color:rc,padding:"0 6px",fontSize:11,fontFamily:mono}}/>
-    <button onClick={()=>onRemove(index)} style={{width:22,height:22,background:"none",border:"none",color:"#ef4444",cursor:"pointer",fontSize:13}}>x</button>
+// ── UI HELPERS ──
+const Stars=({value,onChange,size=14})=>(<div style={{display:"flex",gap:2}}>
+  {[1,2,3].map(s=><span key={s} onClick={e=>{e.stopPropagation();onChange(value===s?0:s);}}
+    style={{cursor:"pointer",fontSize:size,color:s<=value?"#f59e0b":"#334155",userSelect:"none",lineHeight:1}}>★</span>)}</div>);
+
+function SetRow({set,i,onUp,onRm,showPain}){
+  const rc=set.rir!=null&&set.rir!==""?RIR_C(+set.rir):"#475569";
+  const pc=set.pain!=null&&set.pain!==""?PAIN_C(+set.pain):"#475569";
+  return(<div style={{display:"flex",alignItems:"center",gap:3,padding:"2px 0"}}>
+    <div style={{width:16,fontSize:8,color:"#64748b",fontFamily:mono}}>{i+1}</div>
+    <input type="number" placeholder="reps" value={set.reps||""} onChange={e=>onUp(i,"reps",e.target.value)}
+      style={{flex:1,height:28,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:10,fontFamily:mono}}/>
+    <input type="number" placeholder="lbs" value={set.weight||""} onChange={e=>onUp(i,"weight",e.target.value)}
+      style={{width:52,height:28,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:10,fontFamily:mono}}/>
+    <input type="number" placeholder="RIR" value={set.rir!=null?set.rir:""} onChange={e=>onUp(i,"rir",e.target.value)}
+      min="0" max="5" style={{width:38,height:28,background:"#1e293b",border:`1px solid ${rc}`,borderRadius:3,color:rc,padding:"0 4px",fontSize:10,fontFamily:mono}}/>
+    {showPain&&<input type="number" placeholder="P" value={set.pain!=null?set.pain:""} onChange={e=>onUp(i,"pain",e.target.value)}
+      min="0" max="10" title="Joint pain 0-10" style={{width:32,height:28,background:"#1e293b",border:`1px solid ${pc}`,borderRadius:3,color:pc,padding:"0 4px",fontSize:10,fontFamily:mono}}/>}
+    <button onClick={()=>onRm(i)} style={{width:18,height:18,background:"none",border:"none",color:"#ef444466",cursor:"pointer",fontSize:11}}>x</button>
   </div>);
 }
 
-function AnchorCard({pattern,exercise,progression,sets,onUpdateSet,onRemoveSet,onAddSet}){
-  const[open,setOpen]=useState(true);
-  return(<div style={{background:"#0f172a",borderLeft:"3px solid #3b82f6",border:"1px solid #1e293b",borderRadius:6,marginBottom:8}}>
-    <div onClick={()=>setOpen(!open)} style={{padding:"10px 12px",cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-      <div>
-        <div style={{fontSize:10,color:"#3b82f6",textTransform:"uppercase",letterSpacing:1,fontFamily:mono}}>{pattern.label}</div>
-        <div style={{fontSize:13,fontWeight:600,color:"#f1f5f9",fontFamily:mono}}>{exercise}</div>
-      </div>
-      <span style={{color:"#64748b",fontSize:10}}>{open?"\u25B2":"\u25BC"}</span>
-    </div>
-    {open&&<div style={{padding:"0 12px 10px"}}>
-      <div style={{background:"#020617",border:"1px solid #1e293b",borderRadius:4,padding:"6px 8px",marginBottom:6}}>
-        {progression.progressed&&<div style={{fontSize:9,color:"#22c55e",fontFamily:mono,marginBottom:2}}>WEIGHT UP</div>}
-        {progression.tooEasy&&<div style={{fontSize:9,color:"#eab308",fontFamily:mono,marginBottom:2}}>TOO EASY</div>}
-        {progression.tooHard&&<div style={{fontSize:9,color:"#ef4444",fontFamily:mono,marginBottom:2}}>BACK OFF</div>}
-        <div style={{fontSize:10,color:"#94a3b8",fontFamily:mono}}>{progression.note}</div>
-        {progression.weight&&<div style={{fontSize:11,color:"#f59e0b",fontFamily:mono,marginTop:2}}>Target: {progression.reps} reps x {progression.weight}lb</div>}
-      </div>
-      {sets.map((set,i)=><AnchorSetRow key={i} set={set} index={i}
-        onUpdate={(idx,f,v)=>onUpdateSet(pattern.id,idx,f,v)} onRemove={idx=>onRemoveSet(pattern.id,idx)}/>)}
-      <button onClick={()=>onAddSet(pattern.id)} style={{width:"100%",height:26,background:"#1e293b",border:"1px dashed #334155",borderRadius:3,color:"#64748b",fontSize:10,cursor:"pointer",fontFamily:mono,marginTop:3}}>+ set</button>
-    </div>}
+function VolDash({weekVol}){
+  const main=["chest","back","shoulders","quads","hamstrings","glutes","biceps","triceps"];
+  return(<div style={{marginBottom:12}}>
+    <div style={{fontSize:9,color:"#94a3b8",letterSpacing:1,marginBottom:4,fontFamily:mono}}>WEEKLY VOLUME (hard sets)</div>
+    {main.map(m=>{
+      const v=Math.round(weekVol[m]||0);const lm=VOL_LANDMARKS[m]||{mev:6,mav:14,mrv:20};
+      const pct=Math.min(v/lm.mrv*100,110);
+      const c=v<lm.mev?"#ef4444":v<=lm.mav?"#22c55e":v<=lm.mrv?"#eab308":"#ef4444";
+      const label=v<lm.mev?"<MEV":v<=lm.mav?"MEV-MAV":v<=lm.mrv?"MAV-MRV":">MRV";
+      return(<div key={m} style={{display:"flex",alignItems:"center",gap:4,marginBottom:2}}>
+        <div style={{width:52,fontSize:8,color:"#94a3b8",textTransform:"uppercase",fontFamily:mono}}>{m.slice(0,5)}</div>
+        <div style={{flex:1,height:10,background:"#1e293b",borderRadius:2,overflow:"hidden",position:"relative"}}>
+          <div style={{position:"absolute",left:`${lm.mev/lm.mrv*100}%`,width:1,height:"100%",background:"#ffffff22"}}/>
+          <div style={{position:"absolute",left:`${lm.mav/lm.mrv*100}%`,width:1,height:"100%",background:"#ffffff22"}}/>
+          <div style={{width:`${pct}%`,height:"100%",background:c,borderRadius:2,transition:"width 0.3s"}}/>
+        </div>
+        <div style={{width:50,fontSize:8,color:c,fontFamily:mono,textAlign:"right"}}>{v} {label}</div>
+      </div>);
+    })}
   </div>);
 }
 
-function NutritionLog({data,onAdd}){
-  const[cal,setCal]=useState("");const[pro,setPro]=useState("");const[carb,setCarb]=useState("");const[fat,setFat]=useState("");const[note,setNote]=useState("");
-  const today=new Date().toISOString().slice(0,10);
-  const todayEntries=data.filter(d=>d.date===today);
-  const totals=todayEntries.reduce((s,e)=>({cal:s.cal+e.cal,pro:s.pro+e.pro,carb:s.carb+e.carb,fat:s.fat+e.fat}),{cal:0,pro:0,carb:0,fat:0});
-  return(<div>
-    <div style={{fontSize:10,color:"#f59e0b",letterSpacing:2,textTransform:"uppercase",marginBottom:8,fontFamily:mono}}>Nutrition</div>
-    <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:6,padding:"10px 12px",marginBottom:8}}>
-      <div style={{fontSize:11,color:"#e2e8f0",fontFamily:mono,marginBottom:4}}>Today: {totals.cal}cal | P:{totals.pro}g C:{totals.carb}g F:{totals.fat}g</div>
-      <div style={{display:"flex",gap:4,marginBottom:4}}>
-        <input type="number" placeholder="cal" value={cal} onChange={e=>setCal(e.target.value)} style={{flex:1,height:28,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:10,fontFamily:mono}}/>
-        <input type="number" placeholder="P" value={pro} onChange={e=>setPro(e.target.value)} style={{width:40,height:28,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:10,fontFamily:mono}}/>
-        <input type="number" placeholder="C" value={carb} onChange={e=>setCarb(e.target.value)} style={{width:40,height:28,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:10,fontFamily:mono}}/>
-        <input type="number" placeholder="F" value={fat} onChange={e=>setFat(e.target.value)} style={{width:40,height:28,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:10,fontFamily:mono}}/>
-      </div>
-      <div style={{display:"flex",gap:4}}>
-        <input type="text" placeholder="note (meal/food)" value={note} onChange={e=>setNote(e.target.value)} style={{flex:1,height:28,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:10,fontFamily:mono}}/>
-        <button onClick={()=>{if(cal){onAdd({date:today,cal:+cal||0,pro:+pro||0,carb:+carb||0,fat:+fat||0,note,time:new Date().toISOString()});setCal("");setPro("");setCarb("");setFat("");setNote("");}}}
-          style={{width:40,height:28,background:"#f59e0b",border:"none",borderRadius:3,color:"#0f172a",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:mono}}>+</button>
-      </div>
-    </div>
-    {todayEntries.slice().reverse().map((e,i)=><div key={i} style={{fontSize:9,color:"#94a3b8",fontFamily:mono,padding:"2px 0"}}>
-      {e.cal}cal P:{e.pro} C:{e.carb} F:{e.fat} {e.note&&`- ${e.note}`}
-    </div>)}
-  </div>);
-}
-
-function BodyLog({data,onAdd}){
-  const[weight,setWeight]=useState("");const[waist,setWaist]=useState("");const[navel,setNavel]=useState("");const[chest,setChest]=useState("");
-  return(<div>
-    <div style={{fontSize:10,color:"#f59e0b",letterSpacing:2,textTransform:"uppercase",marginBottom:8,marginTop:16,fontFamily:mono}}>Body Measurements</div>
-    <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:6,padding:"10px 12px",marginBottom:8}}>
-      <div style={{display:"flex",gap:4,marginBottom:4}}>
-        <input type="number" placeholder="wt (lb)" value={weight} onChange={e=>setWeight(e.target.value)} style={{flex:1,height:28,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:10,fontFamily:mono}}/>
-        <input type="number" placeholder="waist" value={waist} onChange={e=>setWaist(e.target.value)} style={{flex:1,height:28,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:10,fontFamily:mono}}/>
-        <input type="number" placeholder="navel" value={navel} onChange={e=>setNavel(e.target.value)} style={{flex:1,height:28,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:10,fontFamily:mono}}/>
-        <input type="number" placeholder="chest" value={chest} onChange={e=>setChest(e.target.value)} style={{flex:1,height:28,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:10,fontFamily:mono}}/>
-      </div>
-      <button onClick={()=>{if(weight||waist||navel||chest){onAdd({date:new Date().toISOString().slice(0,10),weight:+weight||null,waist:+waist||null,navel:+navel||null,chest:+chest||null,time:new Date().toISOString()});setWeight("");setWaist("");setNavel("");setChest("");}}}
-        style={{width:"100%",height:28,background:"#22c55e",border:"none",borderRadius:3,color:"#0f172a",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:mono}}>Log measurements</button>
-    </div>
-    {data.slice(-5).reverse().map((e,i)=><div key={i} style={{fontSize:9,color:"#94a3b8",fontFamily:mono,padding:"2px 0"}}>
-      {e.date}: {e.weight&&`${e.weight}lb`} {e.waist&&`W:${e.waist}"`} {e.navel&&`N:${e.navel}"`} {e.chest&&`C:${e.chest}"`}
-    </div>)}
-  </div>);
-}
-
-function CardioLog({data,onAdd}){
-  const[type,setType]=useState("steady");const[dur,setDur]=useState("");const[hr,setHr]=useState("");const[hiitConfig,setHiitConfig]=useState("");
-  return(<div>
-    <div style={{fontSize:10,color:"#f59e0b",letterSpacing:2,textTransform:"uppercase",marginBottom:8,marginTop:16,fontFamily:mono}}>Cardio</div>
-    <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:6,padding:"10px 12px",marginBottom:8}}>
-      <div style={{display:"flex",gap:4,marginBottom:4}}>
-        <select value={type} onChange={e=>setType(e.target.value)} style={{width:70,height:28,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",fontSize:10,fontFamily:mono}}>
-          <option value="steady">Steady</option><option value="hiit">HIIT</option><option value="walk">Walk</option>
-        </select>
-        <input type="number" placeholder="min" value={dur} onChange={e=>setDur(e.target.value)} style={{flex:1,height:28,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:10,fontFamily:mono}}/>
-        <input type="number" placeholder="avg HR" value={hr} onChange={e=>setHr(e.target.value)} style={{width:56,height:28,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:10,fontFamily:mono}}/>
-      </div>
-      {type==="hiit"&&<input type="text" placeholder="config (e.g. 4x4min @175bpm)" value={hiitConfig} onChange={e=>setHiitConfig(e.target.value)}
-        style={{width:"100%",height:28,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:10,fontFamily:mono,marginBottom:4,boxSizing:"border-box"}}/>}
-      <button onClick={()=>{if(dur){onAdd({date:new Date().toISOString().slice(0,10),type,duration:+dur,avgHR:+hr||null,hiitConfig:type==="hiit"?hiitConfig:"",time:new Date().toISOString()});setDur("");setHr("");setHiitConfig("");}}}
-        style={{width:"100%",height:28,background:"#22c55e",border:"none",borderRadius:3,color:"#0f172a",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:mono}}>Log cardio</button>
-    </div>
-    {data.slice(-5).reverse().map((e,i)=><div key={i} style={{fontSize:9,color:"#94a3b8",fontFamily:mono,padding:"2px 0"}}>
-      {e.date}: {e.type} {e.duration}min {e.avgHR&&`HR:${e.avgHR}`} {e.hiitConfig&&`(${e.hiitConfig})`}
-    </div>)}
-  </div>);
-}
-
-// ── Main App ──
+// ── MAIN ──
 export default function App(){
-  const[view,setView]=useState("workout");
+  const[view,setView]=useState("lift");
   const[anchors,setAnchors]=useState(()=>ld(SK.anchors,{}));
   const[anchorLog,setAnchorLog]=useState(()=>ld(SK.anchorLog,{}));
+  const[accLog,setAccLog]=useState(()=>ld(SK.accLog,[]));
   const[anchorSets,setAnchorSets]=useState({});
-  const[accessories,setAccessories]=useState([]);
+  const[accs,setAccs]=useState([]);
   const[banned,setBanned]=useState(()=>ld(SK.banned,[]));
   const[prefs,setPrefs]=useState(()=>ld(SK.prefs,{}));
   const[fatigue,setFatigue]=useState(()=>{const f={};MUSCLES.forEach(m=>f[m]=0);return ld(SK.fatigue,f)});
   const[nutrition,setNutrition]=useState(()=>ld(SK.nutrition,[]));
-  const[body,setBody]=useState(()=>ld(SK.body,[]));
-  const[cardio,setCardio]=useState(()=>ld(SK.cardio,[]));
-  const[showSetup,setShowSetup]=useState(false);
-  const[accCount,setAccCount]=useState(3);
+  const[bodyData,setBodyData]=useState(()=>ld(SK.body,[]));
+  const[cardioData,setCardioData]=useState(()=>ld(SK.cardio,[]));
+  const[meso,setMeso]=useState(()=>ld(SK.meso,{startDate:null,length:5}));
+  const[setup,setSetup]=useState(false);
+  const[dayType,setDayType]=useState("lift");
+  const[accCount]=useState(3);
 
-  const allAnchorsSet=PATTERNS.every(p=>anchors[p.id]);
+  const allSet=PATTERNS.every(p=>anchors[p.id]);
+  const mesoState=getMesoState(meso);
+  const weekVol=useMemo(()=>calcWeeklyVolume(anchorLog,accLog,anchors),[anchorLog,accLog,anchors]);
+  const today=new Date().toISOString().slice(0,10);
+  const targets=DAY_TARGETS[dayType]||DAY_TARGETS.lift;
+  const todayNut=nutrition.filter(d=>d.date===today);
+  const nutTotals=todayNut.reduce((s,e)=>({cal:s.cal+e.cal,pro:s.pro+e.pro,carb:s.carb+e.carb,fat:s.fat+e.fat}),{cal:0,pro:0,carb:0,fat:0});
 
-  // Initialize anchor sets from progression
   const initSession=useCallback(()=>{
-    const sets={};
+    const sets={};const isDeload=mesoState.phase==="deload";
     PATTERNS.forEach(p=>{
       if(!anchors[p.id])return;
-      const prog=getAnchorProgression(anchors[p.id],anchorLog);
-      const numSets=prog.sets||3;
-      sets[p.id]=Array.from({length:numSets},()=>({reps:prog.reps||"",weight:prog.weight||"",rir:""}));
+      const prog=getProgression(anchors[p.id],anchorLog);
+      const n=isDeload?2:(prog.sets||3);
+      const w=isDeload&&prog.weight?Math.round(+prog.weight*0.7):prog.weight;
+      sets[p.id]=Array.from({length:n},()=>({reps:prog.reps||"",weight:w||"",rir:"",pain:""}));
     });
     setAnchorSets(sets);
-    setAccessories(generateAccessories(accCount,banned,prefs,fatigue));
-  },[anchors,anchorLog,accCount,banned,prefs,fatigue]);
+    setAccs(genAcc(accCount,banned,prefs,fatigue,weekVol));
+  },[anchors,anchorLog,accCount,banned,prefs,fatigue,weekVol,mesoState.phase]);
 
-  useEffect(()=>{if(allAnchorsSet)initSession();},[allAnchorsSet]);
+  useEffect(()=>{if(allSet&&!setup)initSession();},[allSet,setup]);
 
-  const updateAnchorSet=useCallback((patId,idx,field,val)=>{
-    setAnchorSets(p=>({...p,[patId]:p[patId].map((s,i)=>i===idx?{...s,[field]:val}:s)}));
-  },[]);
-  const removeAnchorSet=useCallback((patId,idx)=>{
-    setAnchorSets(p=>({...p,[patId]:p[patId].filter((_,i)=>i!==idx)}));
-  },[]);
-  const addAnchorSet=useCallback(patId=>{
-    setAnchorSets(p=>({...p,[patId]:[...(p[patId]||[]),{reps:"",weight:"",rir:""}]}));
-  },[]);
+  const updAS=useCallback((pid,idx,f,v)=>setAnchorSets(p=>({...p,[pid]:p[pid].map((s,i)=>i===idx?{...s,[f]:v}:s)})),[]);
+  const rmAS=useCallback((pid,idx)=>setAnchorSets(p=>({...p,[pid]:p[pid].filter((_,i)=>i!==idx)})),[]);
+  const addAS=useCallback(pid=>setAnchorSets(p=>({...p,[pid]:[...(p[pid]||[]),{reps:"",weight:"",rir:"",pain:""}]})),[]);
+  const updAcc=useCallback((id,idx,f,v)=>setAccs(p=>p.map(a=>a.id===id?{...a,sets:a.sets.map((s,i)=>i===idx?{...s,[f]:v}:s)}:a)),[]);
+  const rmAcc=useCallback((id,idx)=>setAccs(p=>p.map(a=>a.id===id?{...a,sets:a.sets.filter((_,i)=>i!==idx)}:a)),[]);
+  const addAccSet=useCallback(id=>setAccs(p=>p.map(a=>a.id===id?{...a,sets:[...a.sets,{reps:"",weight:"",rir:""}]}:a)),[]);
+  const togLock=useCallback(id=>setAccs(p=>p.map(a=>a.id===id?{...a,locked:!a.locked}:a)),[]);
+  const rerollAcc=useCallback(()=>{const locked=accs.filter(a=>a.locked);const newAccs=genAcc(accCount-locked.length,banned,prefs,fatigue,weekVol);setAccs([...locked,...newAccs]);},[accs,accCount,banned,prefs,fatigue,weekVol]);
 
   const saveSession=useCallback(()=>{
-    const newLog={...anchorLog};
+    // Save anchors
+    const newAL={...anchorLog};
     PATTERNS.forEach(p=>{
       if(!anchors[p.id]||!anchorSets[p.id])return;
-      const logged=anchorSets[p.id].filter(s=>s.reps);
-      if(logged.length===0)return;
-      const name=anchors[p.id];
-      if(!newLog[name])newLog[name]=[];
-      newLog[name].push({date:new Date().toISOString(),sets:logged.map(s=>({reps:+s.reps,weight:+s.weight||0,rir:s.rir!==""?+s.rir:null}))});
-      if(newLog[name].length>30)newLog[name]=newLog[name].slice(-30);
+      const logged=anchorSets[p.id].filter(s=>s.reps);if(!logged.length)return;
+      const nm=anchors[p.id];if(!newAL[nm])newAL[nm]=[];
+      newAL[nm].push({date:new Date().toISOString(),sets:logged.map(s=>({reps:+s.reps,weight:+s.weight||0,rir:s.rir!==""?+s.rir:null,pain:s.pain!==""?+s.pain:null}))});
+      if(newAL[nm].length>40)newAL[nm]=newAL[nm].slice(-40);
     });
-    setAnchorLog(newLog);sv(SK.anchorLog,newLog);
+    setAnchorLog(newAL);sv(SK.anchorLog,newAL);
+    // Save accessories
+    const accEntry={date:new Date().toISOString(),exercises:accs.filter(a=>a.sets.some(s=>s.reps)).map(a=>({name:a.name,sets:a.sets.filter(s=>s.reps).map(s=>({reps:+s.reps,weight:+s.weight||0,rir:s.rir!==""?+s.rir:null}))}))};
+    const newAccLog=[...accLog,accEntry].slice(-40);setAccLog(newAccLog);sv(SK.accLog,newAccLog);
+    // Also save acc progression data
+    const accProg=ld(SK.accLog+"_prog",{});
+    accs.forEach(a=>{const ls=a.sets.filter(s=>s.reps);if(!ls.length)return;
+      if(!accProg[a.name])accProg[a.name]=[];
+      accProg[a.name].push({date:new Date().toISOString(),sets:ls.map(s=>({reps:+s.reps,weight:+s.weight||0,rir:s.rir!==""?+s.rir:null}))});
+      if(accProg[a.name].length>20)accProg[a.name]=accProg[a.name].slice(-20);
+    });sv(SK.accLog+"_prog",accProg);
+    // Update fatigue from pain ratings
+    const nf={...fatigue};
+    PATTERNS.forEach(p=>{
+      const sets=anchorSets[p.id]||[];
+      const pains=sets.filter(s=>s.pain!=null&&s.pain!=="").map(s=>+s.pain);
+      if(pains.length){const avg=pains.reduce((a,b)=>a+b,0)/pains.length;
+        p.muscles.forEach(m=>{nf[m]=Math.min(4,Math.max(nf[m]||0,Math.round(avg/2.5)));});}
+    });
+    setFatigue(nf);sv(SK.fatigue,nf);
+    // Start mesocycle if not started
+    if(!meso.startDate){const nm={startDate:new Date().toISOString(),length:5};setMeso(nm);sv(SK.meso,nm);}
+    // Save to history
+    const hist=ld(SK.history,[]);hist.push({date:new Date().toISOString(),anchors:Object.fromEntries(PATTERNS.map(p=>[p.id,{name:anchors[p.id],sets:anchorSets[p.id]||[]}])),accessories:accEntry.exercises});
+    sv(SK.history,hist.slice(-50));
     initSession();
-    alert("Session saved!");
-  },[anchorLog,anchors,anchorSets,initSession]);
+  },[anchorLog,anchors,anchorSets,accs,accLog,fatigue,meso,initSession]);
 
-  const selectAnchor=useCallback((patId,exName)=>{
-    setAnchors(p=>{const n={...p,[patId]:exName};sv(SK.anchors,n);return n;});
-  },[]);
+  const selAnchor=useCallback((pid,name)=>setAnchors(p=>{const n={...p,[pid]:name};sv(SK.anchors,n);return n;}),[]);
+  const startDeload=useCallback(()=>{setMeso({startDate:new Date().toISOString(),length:1});sv(SK.meso,{startDate:new Date().toISOString(),length:1});},[]);
+  const newMeso=useCallback(()=>{const nm={startDate:new Date().toISOString(),length:5};setMeso(nm);sv(SK.meso,nm);initSession();},[initSession]);
 
-  const addNutrition=useCallback(entry=>{setNutrition(p=>{const n=[...p,entry].slice(-500);sv(SK.nutrition,n);return n;});},[]);
-  const addBody=useCallback(entry=>{setBody(p=>{const n=[...p,entry].slice(-200);sv(SK.body,n);return n;});},[]);
-  const addCardio=useCallback(entry=>{setCardio(p=>{const n=[...p,entry].slice(-200);sv(SK.cardio,n);return n;});},[]);
+  // Nutrition
+  const[nCal,setNCal]=useState("");const[nPro,setNPro]=useState("");const[nCarb,setNCarb]=useState("");const[nFat,setNFat]=useState("");const[nNote,setNNote]=useState("");
+  const addNut=useCallback(()=>{if(!nCal)return;const e={date:today,cal:+nCal||0,pro:+nPro||0,carb:+nCarb||0,fat:+nFat||0,note:nNote,time:new Date().toISOString()};
+    setNutrition(p=>{const n=[...p,e].slice(-1000);sv(SK.nutrition,n);return n;});setNCal("");setNPro("");setNCarb("");setNFat("");setNNote("");},[nCal,nPro,nCarb,nFat,nNote,today]);
+  // Body
+  const[bW,setBW]=useState("");const[bWa,setBWa]=useState("");const[bNa,setBNa]=useState("");const[bCh,setBCh]=useState("");
+  const addBody=useCallback(()=>{if(!bW&&!bWa)return;const e={date:today,weight:+bW||null,waist:+bWa||null,navel:+bNa||null,chest:+bCh||null};
+    setBodyData(p=>{const n=[...p,e].slice(-500);sv(SK.body,n);return n;});setBW("");setBWa("");setBNa("");setBCh("");},[bW,bWa,bNa,bCh,today]);
+  // Cardio
+  const[cType,setCType]=useState("steady");const[cDur,setCDur]=useState("");const[cHR,setCHR]=useState("");const[cConf,setCConf]=useState("");
+  const addCardio=useCallback(()=>{if(!cDur)return;const e={date:today,type:cType,duration:+cDur,avgHR:+cHR||null,config:cType==="hiit"?cConf:""};
+    setCardioData(p=>{const n=[...p,e].slice(-500);sv(SK.cardio,n);return n;});setCDur("");setCHR("");setCConf("");},[cType,cDur,cHR,cConf,today]);
 
-  const nb=(l,t)=>({flex:1,padding:"11px 0",background:"none",border:"none",borderBottom:view===t?"2px solid #f59e0b":"2px solid transparent",
-    color:view===t?"#f59e0b":"#64748b",fontSize:9,fontWeight:600,cursor:"pointer",fontFamily:mono,letterSpacing:1,textTransform:"uppercase"});
+  const nb=(l,t)=>({flex:1,padding:"10px 0",background:"none",border:"none",borderBottom:view===t?"2px solid #f59e0b":"2px solid transparent",
+    color:view===t?"#f59e0b":"#64748b",fontSize:8,fontWeight:600,cursor:"pointer",fontFamily:mono,letterSpacing:1,textTransform:"uppercase"});
 
   return(<div style={{background:"#020617",minHeight:"100vh",color:"#e2e8f0",fontFamily:mono,paddingBottom:80}}>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet"/>
     <nav style={{display:"flex",borderBottom:"1px solid #1e293b",background:"#0f172a",position:"sticky",top:0,zIndex:10}}>
-      <button style={nb("W","workout")} onClick={()=>setView("workout")}>Lift</button>
-      <button style={nb("L","log")} onClick={()=>setView("log")}>Log</button>
+      <button style={nb("L","lift")} onClick={()=>setView("lift")}>Lift</button>
+      <button style={nb("N","log")} onClick={()=>setView("log")}>Log</button>
       <button style={nb("T","trends")} onClick={()=>setView("trends")}>Trends</button>
     </nav>
 
-    <div style={{padding:"12px 10px"}}>
-      {/* ── WORKOUT ── */}
-      {view==="workout"&&<>
-        {!allAnchorsSet||showSetup?<>
-          <div style={{fontSize:10,color:"#3b82f6",letterSpacing:2,textTransform:"uppercase",marginBottom:12,fontFamily:mono}}>
-            Select your 6 anchor lifts
+    <div style={{padding:"10px 8px"}}>
+    {/* ── LIFT ── */}
+    {view==="lift"&&<>
+      {/* Meso banner */}
+      {meso.startDate&&<div style={{background:mesoState.phase==="deload"?"#ef444422":"#3b82f622",border:`1px solid ${mesoState.phase==="deload"?"#ef444444":"#3b82f644"}`,borderRadius:4,padding:"6px 10px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{fontSize:9,color:mesoState.phase==="deload"?"#ef4444":"#3b82f6",fontFamily:mono}}>
+          {mesoState.phase==="deload"?"DELOAD WEEK":"ACCUMULATION"} Wk {mesoState.week}/{meso.length}</div>
+        <div style={{display:"flex",gap:4}}>
+          {mesoState.phase!=="deload"&&<button onClick={startDeload} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#ef4444",fontSize:8,padding:"3px 6px",cursor:"pointer",fontFamily:mono}}>Deload</button>}
+          <button onClick={newMeso} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#22c55e",fontSize:8,padding:"3px 6px",cursor:"pointer",fontFamily:mono}}>New meso</button>
+        </div>
+      </div>}
+
+      <VolDash weekVol={weekVol}/>
+
+      {!allSet||setup?<>
+        <div style={{fontSize:9,color:"#3b82f6",letterSpacing:2,textTransform:"uppercase",marginBottom:8}}>Select 6 anchors</div>
+        {PATTERNS.map(p=><div key={p.id} style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:6,padding:"8px 10px",marginBottom:6}}>
+          <div style={{fontSize:9,color:"#3b82f6",textTransform:"uppercase",letterSpacing:1,fontFamily:mono}}>{p.full}</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:3,marginTop:4}}>
+            {(PATTERN_MAP[p.id]||[]).filter(n=>!banned.includes(n)).map(name=>(
+              <button key={name} onClick={()=>selAnchor(p.id,name)}
+                style={{padding:"4px 8px",borderRadius:3,border:"none",cursor:"pointer",fontSize:9,fontFamily:mono,
+                  background:anchors[p.id]===name?"#3b82f6":"#1e293b",color:anchors[p.id]===name?"#fff":"#94a3b8"}}>{name}</button>))}
           </div>
-          {PATTERNS.map(p=><div key={p.id} style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:6,padding:"10px 12px",marginBottom:8}}>
-            <div style={{fontSize:10,color:"#3b82f6",textTransform:"uppercase",letterSpacing:1,fontFamily:mono}}>{p.label}</div>
-            <div style={{fontSize:9,color:"#475569",fontFamily:mono,marginBottom:6}}>{p.desc}</div>
-            <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-              {(PATTERN_MAP[p.id]||[]).filter(n=>!banned.includes(n)).map(name=>(
-                <button key={name} onClick={()=>selectAnchor(p.id,name)}
-                  style={{padding:"6px 10px",borderRadius:4,border:"none",cursor:"pointer",fontSize:10,fontFamily:mono,
-                    background:anchors[p.id]===name?"#3b82f6":"#1e293b",color:anchors[p.id]===name?"#fff":"#94a3b8",fontWeight:anchors[p.id]===name?700:400}}>
-                  {name}</button>))}
-            </div>
-          </div>)}
-          {allAnchorsSet&&<button onClick={()=>{setShowSetup(false);initSession();}}
-            style={{width:"100%",height:42,background:"#f59e0b",border:"none",borderRadius:6,color:"#0f172a",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:mono,letterSpacing:2,textTransform:"uppercase",marginTop:8}}>
-            Start Session</button>}
-        </>:<>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <div style={{fontSize:10,color:"#3b82f6",letterSpacing:2,textTransform:"uppercase"}}>Anchors (progressed)</div>
-            <button onClick={()=>setShowSetup(true)} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#64748b",fontSize:9,padding:"4px 8px",cursor:"pointer",fontFamily:mono}}>Change anchors</button>
-          </div>
-          {PATTERNS.map(p=>{
-            if(!anchors[p.id])return null;
-            const prog=getAnchorProgression(anchors[p.id],anchorLog);
-            return<AnchorCard key={p.id} pattern={p} exercise={anchors[p.id]} progression={prog}
-              sets={anchorSets[p.id]||[]} onUpdateSet={updateAnchorSet} onRemoveSet={removeAnchorSet} onAddSet={addAnchorSet}/>;
-          })}
-
-          <div style={{fontSize:10,color:"#f59e0b",letterSpacing:2,textTransform:"uppercase",marginTop:16,marginBottom:8}}>Accessories (rotatable)</div>
-          {accessories.map(ex=><div key={ex.id} style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:6,padding:"8px 12px",marginBottom:6}}>
-            <div style={{fontSize:12,fontWeight:600,color:"#e2e8f0",fontFamily:mono}}>{ex.name}</div>
-            <div style={{fontSize:9,color:"#64748b",fontFamily:mono}}>{ex.eq} | {ex.suggestedSets}x{ex.suggestedReps} | {[...ex.p,...ex.s].map(({m,p})=>`${m} ${p}%`).join(" / ")}</div>
-            {ex.sets.map((set,i)=><AnchorSetRow key={i} set={set} index={i}
-              onUpdate={(idx,f,v)=>{setAccessories(prev=>prev.map(a=>a.id===ex.id?{...a,sets:a.sets.map((s,j)=>j===idx?{...s,[f]:v}:s)}:a));}}
-              onRemove={idx=>{setAccessories(prev=>prev.map(a=>a.id===ex.id?{...a,sets:a.sets.filter((_,j)=>j!==idx)}:a));}}/>)}
-          </div>)}
-          <button onClick={()=>setAccessories(generateAccessories(accCount,banned,prefs,fatigue))}
-            style={{width:"100%",height:30,background:"#1e293b",border:"1px dashed #334155",borderRadius:4,color:"#64748b",fontSize:10,cursor:"pointer",fontFamily:mono,marginBottom:12}}>
-            Reroll accessories</button>
-
-          <button onClick={saveSession}
-            style={{width:"100%",height:44,background:"#22c55e",border:"none",borderRadius:6,color:"#0f172a",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:mono,letterSpacing:1,textTransform:"uppercase"}}>
-            Save Session</button>
-        </>}
-      </>}
-
-      {/* ── LOG ── */}
-      {view==="log"&&<>
-        <NutritionLog data={nutrition} onAdd={addNutrition}/>
-        <BodyLog data={body} onAdd={addBody}/>
-        <CardioLog data={cardio} onAdd={addCardio}/>
-      </>}
-
-      {/* ── TRENDS ── */}
-      {view==="trends"&&<>
-        <div style={{fontSize:10,color:"#f59e0b",letterSpacing:2,marginBottom:12,textTransform:"uppercase"}}>Anchor Progression</div>
+        </div>)}
+        {allSet&&<button onClick={()=>{setSetup(false);initSession();}}
+          style={{width:"100%",height:40,background:"#f59e0b",border:"none",borderRadius:6,color:"#0f172a",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:mono,marginTop:8}}>Start Session</button>}
+      </>:<>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+          <div style={{fontSize:9,color:"#3b82f6",letterSpacing:2,textTransform:"uppercase"}}>Anchors</div>
+          <button onClick={()=>setSetup(true)} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#64748b",fontSize:8,padding:"3px 6px",cursor:"pointer",fontFamily:mono}}>Change</button>
+        </div>
         {PATTERNS.map(p=>{
-          const name=anchors[p.id];if(!name)return null;
-          const hist=anchorLog[name];if(!hist||hist.length===0)return(<div key={p.id} style={{fontSize:10,color:"#475569",fontFamily:mono,marginBottom:8}}>{p.label}: {name} - no data</div>);
-          const entries=hist.slice(-8);
-          const e1rms=entries.map(e=>{const b=e.sets.filter(s=>s.weight&&s.reps).sort((a,b)=>(b.weight*b.reps)-(a.weight*a.reps))[0];
-            return b?Math.round(b.weight*(1+b.reps/30)):0}).filter(Boolean);
-          const maxW=Math.max(...entries.map(e=>Math.max(...e.sets.map(s=>+s.weight||0))),1);
-          return(<div key={p.id} style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:6,padding:"10px 12px",marginBottom:8}}>
-            <div style={{fontSize:10,color:"#3b82f6",textTransform:"uppercase",letterSpacing:1,fontFamily:mono}}>{p.label}</div>
-            <div style={{fontSize:12,fontWeight:600,color:"#e2e8f0",fontFamily:mono}}>{name}</div>
-            <div style={{display:"flex",alignItems:"flex-end",gap:3,height:36,marginTop:6}}>
-              {e1rms.map((v,i)=><div key={i} style={{flex:1,height:Math.max((v/Math.max(...e1rms))*34,3),background:i===e1rms.length-1?"#3b82f6":"#3b82f644",borderRadius:2}}/>)}
-            </div>
-            <div style={{fontSize:9,color:"#94a3b8",fontFamily:mono,marginTop:4}}>
-              e1RM: {e1rms[e1rms.length-1]||"--"}lb {e1rms.length>=2&&<span style={{color:e1rms[e1rms.length-1]>e1rms[0]?"#22c55e":"#ef4444"}}>
-                ({e1rms[e1rms.length-1]-e1rms[0]>0?"+":""}{e1rms[e1rms.length-1]-e1rms[0]})</span>}
-              | Sessions: {hist.length}
+          if(!anchors[p.id])return null;
+          const prog=getProgression(anchors[p.id],anchorLog);
+          const sets=anchorSets[p.id]||[];
+          // Check for pain red flags
+          const hasPain=sets.some(s=>s.pain!=null&&s.pain!==""&&+s.pain>=6);
+          return(<div key={p.id} style={{background:"#0f172a",borderLeft:`3px solid ${hasPain?"#ef4444":prog.deload?"#ef4444":prog.progressed?"#22c55e":"#3b82f6"}`,border:"1px solid #1e293b",borderRadius:6,marginBottom:6}}>
+            <div style={{padding:"8px 10px"}}>
+              <div style={{display:"flex",justifyContent:"space-between"}}>
+                <div>
+                  <div style={{fontSize:8,color:"#3b82f6",textTransform:"uppercase",letterSpacing:1}}>{p.label}</div>
+                  <div style={{fontSize:12,fontWeight:600,color:"#f1f5f9"}}>{anchors[p.id]}</div>
+                </div>
+                {hasPain&&<div style={{fontSize:8,color:"#ef4444",padding:"2px 6px",background:"#ef444422",borderRadius:3,height:16}}>RED PAIN</div>}
+              </div>
+              <div style={{background:"#020617",border:"1px solid #1e293b",borderRadius:3,padding:"4px 6px",margin:"4px 0",fontSize:9,color:prog.progressed?"#22c55e":prog.deload?"#ef4444":prog.tooEasy?"#eab308":"#94a3b8",fontFamily:mono}}>
+                {prog.note}
+              </div>
+              {sets.map((s,i)=><SetRow key={i} set={s} i={i} showPain={true}
+                onUp={(idx,f,v)=>updAS(p.id,idx,f,v)} onRm={idx=>rmAS(p.id,idx)}/>)}
+              <button onClick={()=>addAS(p.id)} style={{width:"100%",height:22,background:"#1e293b",border:"1px dashed #334155",borderRadius:3,color:"#64748b",fontSize:9,cursor:"pointer",fontFamily:mono,marginTop:2}}>+ set</button>
             </div>
           </div>);
         })}
 
-        <div style={{fontSize:10,color:"#f59e0b",letterSpacing:2,marginTop:16,marginBottom:12,textTransform:"uppercase"}}>Body Trends</div>
-        {body.length===0?<div style={{fontSize:10,color:"#475569",fontFamily:mono}}>No measurements logged</div>:
-          body.slice(-10).reverse().map((e,i)=><div key={i} style={{fontSize:9,color:"#94a3b8",fontFamily:mono,padding:"2px 0"}}>
-            {e.date}: {e.weight&&`${e.weight}lb`} {e.waist&&`W:${e.waist}"`} {e.navel&&`N:${e.navel}"`} {e.chest&&`C:${e.chest}"`}
-          </div>)}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12,marginBottom:6}}>
+          <div style={{fontSize:9,color:"#f59e0b",letterSpacing:2,textTransform:"uppercase"}}>Accessories</div>
+          <button onClick={rerollAcc} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#94a3b8",fontSize:8,padding:"3px 6px",cursor:"pointer",fontFamily:mono}}>Reroll</button>
+        </div>
+        {accs.map(a=><div key={a.id} style={{background:"#0f172a",borderLeft:a.locked?"3px solid #f59e0b":"1px solid #1e293b",border:"1px solid #1e293b",borderRadius:6,padding:"6px 10px",marginBottom:4}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <div>
+              <div style={{fontSize:11,fontWeight:600,color:"#e2e8f0"}}>{a.name}</div>
+              <div style={{fontSize:8,color:"#475569"}}>{a.eq} | {[...a.p,...a.s].map(({m,p})=>`${m} ${p}%`).join(" / ")}</div>
+              {a.sugWeight&&<div style={{fontSize:8,color:"#f59e0b"}}>Suggest: {a.sugReps}r x {a.sugWeight}lb</div>}
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:4}}>
+              <Stars value={prefs[a.name]||0} onChange={v=>{setPrefs(p=>{const n={...p,[a.name]:v};sv(SK.prefs,n);return n;});}} size={14}/>
+              <button onClick={()=>togLock(a.id)} style={{fontSize:12,background:"none",border:"none",cursor:"pointer",color:a.locked?"#f59e0b":"#334155"}}>{a.locked?"\u{1F512}":"\u{1F513}"}</button>
+            </div>
+          </div>
+          {a.sets.map((s,i)=><SetRow key={i} set={s} i={i} showPain={false}
+            onUp={(idx,f,v)=>updAcc(a.id,idx,f,v)} onRm={idx=>rmAcc(a.id,idx)}/>)}
+          <button onClick={()=>addAccSet(a.id)} style={{width:"100%",height:20,background:"#1e293b",border:"1px dashed #334155",borderRadius:3,color:"#64748b",fontSize:8,cursor:"pointer",fontFamily:mono,marginTop:2}}>+ set</button>
+        </div>)}
 
-        <div style={{fontSize:10,color:"#f59e0b",letterSpacing:2,marginTop:16,marginBottom:12,textTransform:"uppercase"}}>Recent Cardio</div>
-        {cardio.length===0?<div style={{fontSize:10,color:"#475569",fontFamily:mono}}>No cardio logged</div>:
-          cardio.slice(-10).reverse().map((e,i)=><div key={i} style={{fontSize:9,color:"#94a3b8",fontFamily:mono,padding:"2px 0"}}>
-            {e.date}: {e.type} {e.duration}min {e.avgHR&&`HR:${e.avgHR}`} {e.hiitConfig&&`(${e.hiitConfig})`}
-          </div>)}
+        <button onClick={saveSession} style={{width:"100%",height:42,background:"#22c55e",border:"none",borderRadius:6,color:"#0f172a",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:mono,letterSpacing:1,textTransform:"uppercase",marginTop:12}}>Save Session</button>
       </>}
+    </>}
+
+    {/* ── LOG ── */}
+    {view==="log"&&<>
+      <div style={{fontSize:9,color:"#f59e0b",letterSpacing:2,textTransform:"uppercase",marginBottom:6}}>Day Type</div>
+      <div style={{display:"flex",gap:3,marginBottom:10}}>
+        {Object.keys(DAY_TARGETS).map(dt=><button key={dt} onClick={()=>setDayType(dt)}
+          style={{flex:1,height:26,border:"none",borderRadius:3,cursor:"pointer",fontSize:7,fontFamily:mono,textTransform:"uppercase",
+            background:dayType===dt?"#f59e0b":"#1e293b",color:dayType===dt?"#0f172a":"#64748b"}}>{dt.replace("_"," ")}</button>)}
+      </div>
+      <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:6,padding:"8px 10px",marginBottom:8}}>
+        <div style={{fontSize:9,color:"#94a3b8",fontFamily:mono,marginBottom:4}}>Target: {targets.cal}cal | P:{targets.pro}g C:{targets.carb}g F:{targets.fat}g</div>
+        <div style={{fontSize:10,color:"#e2e8f0",fontFamily:mono,marginBottom:6}}>
+          Today: <span style={{color:nutTotals.cal>targets.cal?"#ef4444":"#22c55e"}}>{nutTotals.cal}</span>/{targets.cal}cal |
+          P:<span style={{color:nutTotals.pro<targets.pro-10?"#ef4444":"#22c55e"}}>{nutTotals.pro}</span> C:{nutTotals.carb} F:{nutTotals.fat}
+        </div>
+        <div style={{display:"flex",gap:3,marginBottom:3}}>
+          <input type="number" placeholder="cal" value={nCal} onChange={e=>setNCal(e.target.value)} style={{flex:1,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:9,fontFamily:mono}}/>
+          <input type="number" placeholder="P" value={nPro} onChange={e=>setNPro(e.target.value)} style={{width:36,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 4px",fontSize:9,fontFamily:mono}}/>
+          <input type="number" placeholder="C" value={nCarb} onChange={e=>setNCarb(e.target.value)} style={{width:36,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 4px",fontSize:9,fontFamily:mono}}/>
+          <input type="number" placeholder="F" value={nFat} onChange={e=>setNFat(e.target.value)} style={{width:36,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 4px",fontSize:9,fontFamily:mono}}/>
+        </div>
+        <div style={{display:"flex",gap:3}}>
+          <input type="text" placeholder="note" value={nNote} onChange={e=>setNNote(e.target.value)} style={{flex:1,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:9,fontFamily:mono}}/>
+          <button onClick={addNut} style={{width:36,height:26,background:"#f59e0b",border:"none",borderRadius:3,color:"#0f172a",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:mono}}>+</button>
+        </div>
+      </div>
+      {todayNut.slice().reverse().map((e,i)=><div key={i} style={{fontSize:8,color:"#94a3b8",fontFamily:mono,padding:"1px 0"}}>{e.cal}cal P:{e.pro} C:{e.carb} F:{e.fat} {e.note}</div>)}
+
+      <div style={{fontSize:9,color:"#f59e0b",letterSpacing:2,textTransform:"uppercase",marginTop:14,marginBottom:6}}>Body</div>
+      <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:6,padding:"8px 10px",marginBottom:6}}>
+        <div style={{display:"flex",gap:3,marginBottom:3}}>
+          <input type="number" placeholder="wt lb" value={bW} onChange={e=>setBW(e.target.value)} style={{flex:1,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:9,fontFamily:mono}}/>
+          <input type="number" placeholder='waist"' value={bWa} onChange={e=>setBWa(e.target.value)} style={{flex:1,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:9,fontFamily:mono}}/>
+          <input type="number" placeholder='navel"' value={bNa} onChange={e=>setBNa(e.target.value)} style={{flex:1,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:9,fontFamily:mono}}/>
+          <input type="number" placeholder='chest"' value={bCh} onChange={e=>setBCh(e.target.value)} style={{flex:1,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:9,fontFamily:mono}}/>
+        </div>
+        <button onClick={addBody} style={{width:"100%",height:26,background:"#22c55e",border:"none",borderRadius:3,color:"#0f172a",fontWeight:700,fontSize:9,cursor:"pointer",fontFamily:mono}}>Log</button>
+      </div>
+
+      <div style={{fontSize:9,color:"#f59e0b",letterSpacing:2,textTransform:"uppercase",marginTop:14,marginBottom:6}}>Cardio</div>
+      <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:6,padding:"8px 10px"}}>
+        <div style={{display:"flex",gap:3,marginBottom:3}}>
+          <select value={cType} onChange={e=>setCType(e.target.value)} style={{width:60,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",fontSize:8,fontFamily:mono}}>
+            <option value="steady">Steady</option><option value="hiit">HIIT</option><option value="walk">Walk</option></select>
+          <input type="number" placeholder="min" value={cDur} onChange={e=>setCDur(e.target.value)} style={{flex:1,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:9,fontFamily:mono}}/>
+          <input type="number" placeholder="avg HR" value={cHR} onChange={e=>setCHR(e.target.value)} style={{width:50,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:9,fontFamily:mono}}/>
+        </div>
+        {cType==="hiit"&&<input type="text" placeholder="4x4min @175bpm" value={cConf} onChange={e=>setCConf(e.target.value)}
+          style={{width:"100%",height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:9,fontFamily:mono,marginBottom:3,boxSizing:"border-box"}}/>}
+        <button onClick={addCardio} style={{width:"100%",height:26,background:"#22c55e",border:"none",borderRadius:3,color:"#0f172a",fontWeight:700,fontSize:9,cursor:"pointer",fontFamily:mono}}>Log</button>
+      </div>
+    </>}
+
+    {/* ── TRENDS ── */}
+    {view==="trends"&&<>
+      <div style={{fontSize:9,color:"#3b82f6",letterSpacing:2,marginBottom:8,textTransform:"uppercase"}}>Anchor Progression</div>
+      {PATTERNS.map(p=>{
+        const nm=anchors[p.id];if(!nm)return null;const h=anchorLog[nm];
+        if(!h||!h.length)return<div key={p.id} style={{fontSize:9,color:"#475569",fontFamily:mono,marginBottom:4}}>{p.label}: no data</div>;
+        const ents=h.slice(-10);
+        const e1rms=ents.map(e=>{const b=e.sets.filter(s=>s.weight&&s.reps).sort((a,b)=>(b.weight*b.reps)-(a.weight*a.reps))[0];
+          return b?Math.round(b.weight*(1+b.reps/30)):0}).filter(Boolean);
+        const maxE=Math.max(...e1rms,1);
+        return(<div key={p.id} style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:6,padding:"8px 10px",marginBottom:6}}>
+          <div style={{fontSize:8,color:"#3b82f6",textTransform:"uppercase"}}>{p.label}</div>
+          <div style={{fontSize:11,fontWeight:600,color:"#e2e8f0"}}>{nm}</div>
+          <div style={{display:"flex",alignItems:"flex-end",gap:2,height:30,marginTop:4}}>
+            {e1rms.map((v,i)=><div key={i} style={{flex:1,height:Math.max((v/maxE)*28,2),background:i===e1rms.length-1?"#3b82f6":"#3b82f644",borderRadius:1}}/>)}
+          </div>
+          <div style={{fontSize:8,color:"#94a3b8",fontFamily:mono,marginTop:3}}>
+            e1RM: {e1rms[e1rms.length-1]||"--"}lb {e1rms.length>=2&&<span style={{color:e1rms[e1rms.length-1]>=e1rms[0]?"#22c55e":"#ef4444"}}>
+              ({e1rms[e1rms.length-1]-e1rms[0]>0?"+":""}{e1rms[e1rms.length-1]-e1rms[0]})</span>} | {h.length} sessions
+          </div>
+        </div>);
+      })}
+
+      <VolDash weekVol={weekVol}/>
+
+      <div style={{fontSize:9,color:"#f59e0b",letterSpacing:2,marginTop:12,marginBottom:8,textTransform:"uppercase"}}>Body</div>
+      {bodyData.length===0?<div style={{fontSize:9,color:"#475569"}}>No data</div>:
+        bodyData.slice(-10).reverse().map((e,i)=><div key={i} style={{fontSize:8,color:"#94a3b8",fontFamily:mono,padding:"1px 0"}}>
+          {e.date}: {e.weight&&`${e.weight}lb`} {e.waist&&`W:${e.waist}"`} {e.navel&&`N:${e.navel}"`} {e.chest&&`C:${e.chest}"`}
+        </div>)}
+      {bodyData.length>=2&&(()=>{const f=bodyData[0],l=bodyData[bodyData.length-1];
+        return<div style={{fontSize:9,color:"#94a3b8",fontFamily:mono,marginTop:4,background:"#0f172a",padding:"6px 8px",borderRadius:4}}>
+          {f.weight&&l.weight&&<div>Weight: {f.weight} → {l.weight} (<span style={{color:l.weight<f.weight?"#22c55e":"#ef4444"}}>{l.weight>f.weight?"+":""}{(l.weight-f.weight).toFixed(1)}</span>)</div>}
+          {f.waist&&l.waist&&<div>Waist: {f.waist}" → {l.waist}" (<span style={{color:l.waist<f.waist?"#22c55e":"#ef4444"}}>{l.waist>f.waist?"+":""}{(l.waist-f.waist).toFixed(1)}</span>)</div>}
+          {f.navel&&l.navel&&<div>Navel: {f.navel}" → {l.navel}" (<span style={{color:l.navel<f.navel?"#22c55e":"#ef4444"}}>{l.navel>f.navel?"+":""}{(l.navel-f.navel).toFixed(1)}</span>)</div>}
+        </div>;})()}
+
+      <div style={{fontSize:9,color:"#f59e0b",letterSpacing:2,marginTop:12,marginBottom:8,textTransform:"uppercase"}}>Cardio</div>
+      {cardioData.length===0?<div style={{fontSize:9,color:"#475569"}}>No data</div>:
+        cardioData.slice(-10).reverse().map((e,i)=><div key={i} style={{fontSize:8,color:"#94a3b8",fontFamily:mono,padding:"1px 0"}}>
+          {e.date}: {e.type} {e.duration}min {e.avgHR&&`HR:${e.avgHR}`} {e.config&&`(${e.config})`}
+        </div>)}
+    </>}
     </div>
   </div>);
 }
