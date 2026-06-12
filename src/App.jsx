@@ -299,14 +299,20 @@ export default function App(){
   const[nCal,setNCal]=useState("");const[nPro,setNPro]=useState("");const[nCarb,setNCarb]=useState("");const[nFat,setNFat]=useState("");const[nNote,setNNote]=useState("");
   const addNut=useCallback(()=>{if(!nCal)return;const e={date:today,cal:+nCal||0,pro:+nPro||0,carb:+nCarb||0,fat:+nFat||0,note:nNote,time:new Date().toISOString()};
     setNutrition(p=>{const n=[...p,e].slice(-1000);sv(SK.nutrition,n);return n;});setNCal("");setNPro("");setNCarb("");setNFat("");setNNote("");},[nCal,nPro,nCarb,nFat,nNote,today]);
+  const delNut=useCallback(time=>{setNutrition(p=>{const n=p.filter(e=>e.time!==time);sv(SK.nutrition,n);return n;});},[]);
   // Body
   const[bW,setBW]=useState("");const[bWa,setBWa]=useState("");const[bNa,setBNa]=useState("");const[bCh,setBCh]=useState("");
-  const addBody=useCallback(()=>{if(!bW&&!bWa)return;const e={date:today,weight:+bW||null,waist:+bWa||null,navel:+bNa||null,chest:+bCh||null};
+  const addBody=useCallback(()=>{if(!bW&&!bWa)return;const e={date:today,weight:+bW||null,waist:+bWa||null,navel:+bNa||null,chest:+bCh||null,time:new Date().toISOString()};
     setBodyData(p=>{const n=[...p,e].slice(-500);sv(SK.body,n);return n;});setBW("");setBWa("");setBNa("");setBCh("");},[bW,bWa,bNa,bCh,today]);
+  const delBody=useCallback(time=>{setBodyData(p=>{const n=p.filter(e=>e.time!==time);sv(SK.body,n);return n;});},[]);
   // Cardio
   const[cType,setCType]=useState("steady");const[cDur,setCDur]=useState("");const[cHR,setCHR]=useState("");const[cConf,setCConf]=useState("");
-  const addCardio=useCallback(()=>{if(!cDur)return;const e={date:today,type:cType,duration:+cDur,avgHR:+cHR||null,config:cType==="hiit"?cConf:""};
+  const addCardio=useCallback(()=>{if(!cDur)return;const e={date:today,type:cType,duration:+cDur,avgHR:+cHR||null,config:cType==="hiit"?cConf:"",time:new Date().toISOString()};
     setCardioData(p=>{const n=[...p,e].slice(-500);sv(SK.cardio,n);return n;});setCDur("");setCHR("");setCConf("");},[cType,cDur,cHR,cConf,today]);
+  const delCardio=useCallback(time=>{setCardioData(p=>{const n=p.filter(e=>e.time!==time);sv(SK.cardio,n);return n;});},[]);
+  const clearAllData=useCallback(()=>{if(!confirm("Delete ALL data? This cannot be undone."))return;
+    Object.values(SK).forEach(k=>localStorage.removeItem(k));localStorage.removeItem(SK.accLog+"_prog");
+    window.location.reload();},[]);
 
   const nb=(l,t)=>({flex:1,padding:"10px 0",background:"none",border:"none",borderBottom:view===t?"2px solid #f59e0b":"2px solid transparent",
     color:view===t?"#f59e0b":"#64748b",fontSize:8,fontWeight:600,cursor:"pointer",fontFamily:mono,letterSpacing:1,textTransform:"uppercase"});
@@ -443,7 +449,10 @@ export default function App(){
           <button onClick={addNut} style={{width:36,height:26,background:"#f59e0b",border:"none",borderRadius:3,color:"#0f172a",fontWeight:700,fontSize:10,cursor:"pointer",fontFamily:mono}}>+</button>
         </div>
       </div>
-      {todayNut.slice().reverse().map((e,i)=><div key={i} style={{fontSize:8,color:"#94a3b8",fontFamily:mono,padding:"1px 0"}}>{e.cal}cal P:{e.pro} C:{e.carb} F:{e.fat} {e.note}</div>)}
+      {todayNut.slice().reverse().map((e,i)=><div key={i} style={{fontSize:8,color:"#94a3b8",fontFamily:mono,padding:"2px 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span>{e.cal}cal P:{e.pro} C:{e.carb} F:{e.fat} {e.note}</span>
+        <button onClick={()=>delNut(e.time)} style={{background:"none",border:"none",color:"#ef444466",fontSize:9,cursor:"pointer",fontFamily:mono,padding:"0 4px"}}>x</button>
+      </div>)}
 
       <div style={{fontSize:9,color:"#f59e0b",letterSpacing:2,textTransform:"uppercase",marginTop:14,marginBottom:6}}>Body</div>
       <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:6,padding:"8px 10px",marginBottom:6}}>
@@ -455,6 +464,10 @@ export default function App(){
         </div>
         <button onClick={addBody} style={{width:"100%",height:26,background:"#22c55e",border:"none",borderRadius:3,color:"#0f172a",fontWeight:700,fontSize:9,cursor:"pointer",fontFamily:mono}}>Log</button>
       </div>
+      {bodyData.slice(-5).reverse().map((e,i)=><div key={i} style={{fontSize:8,color:"#94a3b8",fontFamily:mono,padding:"2px 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span>{e.date}: {e.weight&&`${e.weight}lb`} {e.waist&&`W:${e.waist}"`} {e.navel&&`N:${e.navel}"`} {e.chest&&`C:${e.chest}"`}</span>
+        <button onClick={()=>delBody(e.time||e.date)} style={{background:"none",border:"none",color:"#ef444466",fontSize:9,cursor:"pointer",fontFamily:mono,padding:"0 4px"}}>x</button>
+      </div>)}
 
       <div style={{fontSize:9,color:"#f59e0b",letterSpacing:2,textTransform:"uppercase",marginTop:14,marginBottom:6}}>Cardio</div>
       <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:6,padding:"8px 10px"}}>
@@ -468,6 +481,12 @@ export default function App(){
           style={{width:"100%",height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:9,fontFamily:mono,marginBottom:3,boxSizing:"border-box"}}/>}
         <button onClick={addCardio} style={{width:"100%",height:26,background:"#22c55e",border:"none",borderRadius:3,color:"#0f172a",fontWeight:700,fontSize:9,cursor:"pointer",fontFamily:mono}}>Log</button>
       </div>
+      {cardioData.slice(-5).reverse().map((e,i)=><div key={i} style={{fontSize:8,color:"#94a3b8",fontFamily:mono,padding:"2px 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <span>{e.date}: {e.type} {e.duration}min {e.avgHR&&`HR:${e.avgHR}`} {e.config&&`(${e.config})`}</span>
+        <button onClick={()=>delCardio(e.time||e.date)} style={{background:"none",border:"none",color:"#ef444466",fontSize:9,cursor:"pointer",fontFamily:mono,padding:"0 4px"}}>x</button>
+      </div>)}
+
+      <button onClick={clearAllData} style={{width:"100%",height:30,background:"#1e293b",border:"1px solid #ef444433",borderRadius:4,color:"#ef4444",fontSize:9,cursor:"pointer",fontFamily:mono,marginTop:20}}>Clear All Data</button>
     </>}
 
     {/* ── TRENDS ── */}
@@ -479,8 +498,9 @@ export default function App(){
         const avg=durations.length?Math.round(durations.reduce((a,b)=>a+b,0)/durations.length):0;
         return<div style={{marginBottom:12}}>
           {avg>0&&<div style={{fontSize:9,color:"#94a3b8",fontFamily:mono,marginBottom:4}}>Avg session: {avg}min | Full: {hist.filter(h=>h.mode==="full").length} | Quick: {hist.filter(h=>h.mode==="quick").length}</div>}
-          {hist.map((h,i)=><div key={i} style={{fontSize:8,color:"#94a3b8",fontFamily:mono,padding:"1px 0"}}>
-            {new Date(h.date).toLocaleDateString("en-US",{month:"short",day:"numeric"})} {h.mode==="quick"?"[Q]":"[F]"} {h.durationMin?`${h.durationMin}min`:""} {Object.values(h.anchors||{}).filter(a=>a.sets?.some(s=>s.reps)).length} anchors
+          {hist.map((h,i)=><div key={i} style={{fontSize:8,color:"#94a3b8",fontFamily:mono,padding:"1px 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span>{new Date(h.date).toLocaleDateString("en-US",{month:"short",day:"numeric"})} {h.mode==="quick"?"[Q]":"[F]"} {h.durationMin?`${h.durationMin}min`:""} {Object.values(h.anchors||{}).filter(a=>a.sets?.some(s=>s.reps)).length} anchors</span>
+            <button onClick={()=>{const all=ld(SK.history,[]).filter(x=>x.date!==h.date);sv(SK.history,all);}} style={{background:"none",border:"none",color:"#ef444466",fontSize:8,cursor:"pointer",fontFamily:mono}}>x</button>
           </div>)}
         </div>;
       })()}
@@ -499,9 +519,11 @@ export default function App(){
           <div style={{display:"flex",alignItems:"flex-end",gap:2,height:30,marginTop:4}}>
             {e1rms.map((v,i)=><div key={i} style={{flex:1,height:Math.max((v/maxE)*28,2),background:i===e1rms.length-1?"#3b82f6":"#3b82f644",borderRadius:1}}/>)}
           </div>
-          <div style={{fontSize:8,color:"#94a3b8",fontFamily:mono,marginTop:3}}>
-            e1RM: {e1rms[e1rms.length-1]||"--"}lb {e1rms.length>=2&&<span style={{color:e1rms[e1rms.length-1]>=e1rms[0]?"#22c55e":"#ef4444"}}>
-              ({e1rms[e1rms.length-1]-e1rms[0]>0?"+":""}{e1rms[e1rms.length-1]-e1rms[0]})</span>} | {h.length} sessions
+          <div style={{fontSize:8,color:"#94a3b8",fontFamily:mono,marginTop:3,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span>e1RM: {e1rms[e1rms.length-1]||"--"}lb {e1rms.length>=2&&<span style={{color:e1rms[e1rms.length-1]>=e1rms[0]?"#22c55e":"#ef4444"}}>
+              ({e1rms[e1rms.length-1]-e1rms[0]>0?"+":""}{e1rms[e1rms.length-1]-e1rms[0]})</span>} | {h.length} sessions</span>
+            <button onClick={()=>{const newLog={...anchorLog};if(newLog[nm]&&newLog[nm].length>0){newLog[nm]=newLog[nm].slice(0,-1);setAnchorLog(newLog);sv(SK.anchorLog,newLog);}}}
+              style={{background:"none",border:"1px solid #ef444433",borderRadius:3,color:"#ef444466",fontSize:7,cursor:"pointer",fontFamily:mono,padding:"2px 6px"}}>del last</button>
           </div>
         </div>);
       })}
