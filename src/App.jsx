@@ -128,6 +128,15 @@ function genAcc(n,banned,prefs,fatigue,weekVol){
   return sel;
 }
 
+
+function SessionTimer({start}){
+  const[now,setNow]=useState(Date.now());
+  useEffect(()=>{const t=setInterval(()=>setNow(Date.now()),1000);return()=>clearInterval(t);},[]);
+  const s=Math.floor((now-start)/1000);const m=Math.floor(s/60);const h=Math.floor(m/60);
+  return<div style={{fontSize:11,color:"#22c55e",fontFamily:mono,fontWeight:700}}>
+    {h>0?`${h}:${String(m%60).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`:`${m}:${String(s%60).padStart(2,"0")}`}</div>;
+}
+
 // ── UI HELPERS ──
 const Stars=({value,onChange,size=14})=>(<div style={{display:"flex",gap:2}}>
   {[1,2,3].map(s=><span key={s} onClick={e=>{e.stopPropagation();onChange(value===s?0:s);}}
@@ -172,6 +181,19 @@ function VolDash({weekVol}){
   </div>);
 }
 
+
+// Quick/maintenance mode: 1 hard set per anchor, no accessories
+function genQuickSession(anchors,anchorLog){
+  const sets={};
+  PATTERNS.forEach(p=>{
+    if(!anchors[p.id])return;
+    const prog=getProgression(anchors[p.id],anchorLog);
+    // Quick mode: 1 set, same weight, target RIR 2-3
+    sets[p.id]=[{reps:prog.reps||6,weight:prog.weight||"",rir:"",pain:"",ts:null}];
+  });
+  return sets;
+}
+
 // ── MAIN ──
 export default function App(){
   const[view,setView]=useState("lift");
@@ -190,6 +212,9 @@ export default function App(){
   const[setup,setSetup]=useState(false);
   const[dayType,setDayType]=useState("lift");
   const[accCount]=useState(3);
+  const[sessionStart,setSessionStart]=useState(null);
+  const[sessionMode,setSessionMode]=useState("full"); // "full" or "quick"
+  const[setTimestamps,setSetTimestamps]=useState([]);
 
   const allSet=PATTERNS.every(p=>anchors[p.id]);
   const mesoState=getMesoState(meso);
@@ -206,7 +231,7 @@ export default function App(){
       const prog=getProgression(anchors[p.id],anchorLog);
       const n=isDeload?2:(prog.sets||3);
       const w=isDeload&&prog.weight?Math.round(+prog.weight*0.7):prog.weight;
-      sets[p.id]=Array.from({length:n},()=>({reps:prog.reps||"",weight:w||"",rir:"",pain:""}));
+      sets[p.id]=Array.from({length:n},()=>({reps:prog.reps||"",weight:w||"",rir:"",pain:"",ts:null}));
     });
     setAnchorSets(sets);
     setAccs(genAcc(accCount,banned,prefs,fatigue,weekVol));
@@ -255,11 +280,16 @@ export default function App(){
     setFatigue(nf);sv(SK.fatigue,nf);
     // Start mesocycle if not started
     if(!meso.startDate){const nm={startDate:new Date().toISOString(),length:5};setMeso(nm);sv(SK.meso,nm);}
-    // Save to history
-    const hist=ld(SK.history,[]);hist.push({date:new Date().toISOString(),anchors:Object.fromEntries(PATTERNS.map(p=>[p.id,{name:anchors[p.id],sets:anchorSets[p.id]||[]}])),accessories:accEntry.exercises});
-    sv(SK.history,hist.slice(-50));
+
+    // Record session duration
+    const duration=sessionStart?Math.round((Date.now()-sessionStart)/60000):null;
+    const histEntry={date:new Date().toISOString(),mode:sessionMode,durationMin:duration,
+      anchors:Object.fromEntries(PATTERNS.map(p=>[p.id,{name:anchors[p.id],sets:anchorSets[p.id]||[]}])),
+      accessories:accEntry.exercises};
+    const histArr=ld(SK.history,[]);histArr.push(histEntry);sv(SK.history,histArr.slice(-50));
+    setSessionStart(null);setSessionMode("full");
     initSession();
-  },[anchorLog,anchors,anchorSets,accs,accLog,fatigue,meso,initSession]);
+  },[anchorLog,anchors,anchorSets,accs,accLog,fatigue,meso,initSession,sessionStart,sessionMode]);
 
   const selAnchor=useCallback((pid,name)=>setAnchors(p=>{const n={...p,[pid]:name};sv(SK.anchors,n);return n;}),[]);
   const startDeload=useCallback(()=>{setMeso({startDate:new Date().toISOString(),length:1});sv(SK.meso,{startDate:new Date().toISOString(),length:1});},[]);
@@ -318,8 +348,22 @@ export default function App(){
         {allSet&&<button onClick={()=>{setSetup(false);initSession();}}
           style={{width:"100%",height:40,background:"#f59e0b",border:"none",borderRadius:6,color:"#0f172a",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:mono,marginTop:8}}>Start Session</button>}
       </>:<>
+        
+        {/* Session timer */}
+        {sessionStart&&<div style={{background:"#22c55e11",border:"1px solid #22c55e33",borderRadius:4,padding:"6px 10px",marginBottom:8,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div style={{fontSize:9,color:"#22c55e",fontFamily:mono}}>SESSION ACTIVE</div>
+          <SessionTimer start={sessionStart}/>
+        </div>}
+
+        {!sessionStart&&<div style={{display:"flex",gap:4,marginBottom:8}}>
+          <button onClick={()=>{setSessionStart(Date.now());setSessionMode("full");initSession();}}
+            style={{flex:2,height:34,background:"#22c55e",border:"none",borderRadius:4,color:"#0f172a",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:mono}}>START FULL</button>
+          <button onClick={()=>{setSessionStart(Date.now());setSessionMode("quick");setAnchorSets(genQuickSession(anchors,anchorLog));setAccs([]);}}
+            style={{flex:1,height:34,background:"#f59e0b",border:"none",borderRadius:4,color:"#0f172a",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:mono}}>QUICK</button>
+        </div>}
+
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-          <div style={{fontSize:9,color:"#3b82f6",letterSpacing:2,textTransform:"uppercase"}}>Anchors</div>
+          <div style={{fontSize:9,color:"#3b82f6",letterSpacing:2,textTransform:"uppercase"}}>Anchors {sessionMode==="quick"&&"(1 set maintenance)"}</div>
           <button onClick={()=>setSetup(true)} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#64748b",fontSize:8,padding:"3px 6px",cursor:"pointer",fontFamily:mono}}>Change</button>
         </div>
         {PATTERNS.map(p=>{
@@ -347,7 +391,7 @@ export default function App(){
           </div>);
         })}
 
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12,marginBottom:6}}>
+        {sessionMode==="full"&&<div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12,marginBottom:6}}>
           <div style={{fontSize:9,color:"#f59e0b",letterSpacing:2,textTransform:"uppercase"}}>Accessories</div>
           <button onClick={rerollAcc} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#94a3b8",fontSize:8,padding:"3px 6px",cursor:"pointer",fontFamily:mono}}>Reroll</button>
         </div>
@@ -367,6 +411,8 @@ export default function App(){
             onUp={(idx,f,v)=>updAcc(a.id,idx,f,v)} onRm={idx=>rmAcc(a.id,idx)}/>)}
           <button onClick={()=>addAccSet(a.id)} style={{width:"100%",height:20,background:"#1e293b",border:"1px dashed #334155",borderRadius:3,color:"#64748b",fontSize:8,cursor:"pointer",fontFamily:mono,marginTop:2}}>+ set</button>
         </div>)}
+
+        }
 
         <button onClick={saveSession} style={{width:"100%",height:42,background:"#22c55e",border:"none",borderRadius:6,color:"#0f172a",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:mono,letterSpacing:1,textTransform:"uppercase",marginTop:12}}>Save Session</button>
       </>}
@@ -426,6 +472,19 @@ export default function App(){
 
     {/* ── TRENDS ── */}
     {view==="trends"&&<>
+      <div style={{fontSize:9,color:"#f59e0b",letterSpacing:2,marginBottom:8,textTransform:"uppercase"}}>Session History</div>
+      {(()=>{const hist=ld(SK.history,[]).slice(-10).reverse();
+        if(!hist.length)return<div style={{fontSize:9,color:"#475569",marginBottom:12}}>No sessions</div>;
+        const durations=hist.filter(h=>h.durationMin).map(h=>h.durationMin);
+        const avg=durations.length?Math.round(durations.reduce((a,b)=>a+b,0)/durations.length):0;
+        return<div style={{marginBottom:12}}>
+          {avg>0&&<div style={{fontSize:9,color:"#94a3b8",fontFamily:mono,marginBottom:4}}>Avg session: {avg}min | Full: {hist.filter(h=>h.mode==="full").length} | Quick: {hist.filter(h=>h.mode==="quick").length}</div>}
+          {hist.map((h,i)=><div key={i} style={{fontSize:8,color:"#94a3b8",fontFamily:mono,padding:"1px 0"}}>
+            {new Date(h.date).toLocaleDateString("en-US",{month:"short",day:"numeric"})} {h.mode==="quick"?"[Q]":"[F]"} {h.durationMin?`${h.durationMin}min`:""} {Object.values(h.anchors||{}).filter(a=>a.sets?.some(s=>s.reps)).length} anchors
+          </div>)}
+        </div>;
+      })()}
+
       <div style={{fontSize:9,color:"#3b82f6",letterSpacing:2,marginBottom:8,textTransform:"uppercase"}}>Anchor Progression</div>
       {PATTERNS.map(p=>{
         const nm=anchors[p.id];if(!nm)return null;const h=anchorLog[nm];
