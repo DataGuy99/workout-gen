@@ -33,8 +33,8 @@ const ALL_PAT_EX=new Set(Object.values(PATTERN_MAP).flat());
 const ACC_POOL=EXERCISES.filter(e=>!ALL_PAT_EX.has(e.name));
 
 // Day-type nutrition targets
-const DAY_TARGETS={long_ride:{cal:2600,pro:190,carb:280,fat:90},med_ride:{cal:2300,pro:190,carb:210,fat:85},
-  hiit:{cal:2100,pro:190,carb:170,fat:80},lift:{cal:2100,pro:190,carb:170,fat:80},rest:{cal:1800,pro:190,carb:110,fat:75}};
+const DAY_TARGETS={long_ride:{cal:2900,pro:190,carb:320,fat:95},med_ride:{cal:2600,pro:190,carb:258,fat:90},
+  hiit:{cal:2400,pro:190,carb:208,fat:90},lift:{cal:2400,pro:190,carb:208,fat:90},rest:{cal:2100,pro:190,carb:133,fat:90}};
 
 // ── PROGRESSION ──
 function getProgression(name,log,repRange=[6,10],targetRIR=2){
@@ -182,21 +182,52 @@ function VolDash({weekVol}){
 }
 
 
-// Quick/maintenance mode: bodyweight only, no equipment loading, 1 set each, all groups
-const QUICK_BW=[
-  {name:"Pull-ups",muscles:"back, biceps",reps:"max"},
-  {name:"Push-ups",muscles:"chest, triceps, shoulders",reps:"max"},
-  {name:"Dips",muscles:"chest, triceps, shoulders",reps:"max"},
-  {name:"Bodyweight Squats",muscles:"quads, glutes",reps:"20-30"},
-  {name:"Nordic Curls",muscles:"hamstrings, glutes",reps:"max"},
-  {name:"Hanging Leg Raises",muscles:"core",reps:"max"},
-];
+// Quick/maintenance mode: bodyweight only, randomized from pools per muscle group
+const QUICK_POOLS={
+  pull:[ // back, biceps
+    {name:"Pull-ups",muscles:"back, biceps"},
+    {name:"Chin-ups",muscles:"back, biceps"},
+    {name:"Wide-grip Pull-ups",muscles:"back, biceps"},
+    {name:"Commando Pull-ups",muscles:"back, biceps, core"},
+  ],
+  push:[ // chest, triceps, shoulders
+    {name:"Push-ups",muscles:"chest, triceps, shoulders"},
+    {name:"Diamond Push-ups",muscles:"triceps, chest, core"},
+    {name:"Decline Push-ups",muscles:"chest, shoulders, triceps"},
+    {name:"Dips",muscles:"chest, triceps, shoulders"},
+    {name:"Pike Push-ups",muscles:"shoulders, triceps, core"},
+  ],
+  legs_push:[ // quads, glutes
+    {name:"Bodyweight Squats (20-30 reps)",muscles:"quads, glutes"},
+    {name:"Pistol Squats",muscles:"quads, glutes, core"},
+    {name:"Sissy Squats",muscles:"quads, core"},
+    {name:"Wall Sit (60s hold)",muscles:"quads, glutes"},
+    {name:"Jump Squats",muscles:"quads, glutes, calves"},
+  ],
+  legs_pull:[ // hamstrings, glutes
+    {name:"Nordic Curls",muscles:"hamstrings, glutes"},
+    {name:"Single-leg Hip Thrust",muscles:"glutes, hamstrings"},
+    {name:"Glute Bridge (20 reps)",muscles:"glutes, hamstrings"},
+    {name:"Single-leg Glute Bridge",muscles:"glutes, hamstrings, core"},
+  ],
+  core:[
+    {name:"Hanging Leg Raises",muscles:"core, grip"},
+    {name:"Hanging Knee Raises",muscles:"core"},
+    {name:"Plank Hold (60s)",muscles:"core, shoulders"},
+    {name:"Hollow Body Hold (45s)",muscles:"core, quads"},
+    {name:"Mountain Climbers (30s)",muscles:"core, shoulders, quads"},
+    {name:"Dead Bugs (12 each)",muscles:"core"},
+    {name:"L-Sit Hold",muscles:"core, quads, triceps"},
+  ],
+};
 
 function genQuickSession(){
-  return QUICK_BW.map(ex=>({
-    id:crypto.randomUUID(),name:ex.name,muscles:ex.muscles,sugReps:ex.reps,
-    sets:[{reps:"",weight:"BW",rir:"",pain:""}],
-  }));
+  const pick=arr=>arr[Math.floor(Math.random()*arr.length)];
+  return Object.values(QUICK_POOLS).map(pool=>{
+    const ex=pick(pool);
+    return{id:crypto.randomUUID(),name:ex.name,muscles:ex.muscles,sugReps:"max",
+      sets:[{reps:"",weight:"BW",rir:"",pain:""}]};
+  });
 }
 
 // ── MAIN ──
@@ -382,6 +413,10 @@ export default function App(){
         </div>
 
         {sessionMode==="quick"&&<>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+            <div style={{fontSize:9,color:"#f59e0b",letterSpacing:2}}>5 exercises, 1 set each, bodyweight</div>
+            <button onClick={()=>setQuickExs(genQuickSession())} style={{background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#94a3b8",fontSize:8,padding:"3px 6px",cursor:"pointer",fontFamily:mono}}>Reroll</button>
+          </div>
           {quickExs.map(ex=><div key={ex.id} style={{background:"#0f172a",borderLeft:"3px solid #f59e0b",border:"1px solid #1e293b",borderRadius:6,padding:"8px 10px",marginBottom:6}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
               <div>
