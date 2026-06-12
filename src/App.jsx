@@ -338,9 +338,9 @@ export default function App(){
     setNutrition(p=>{const n=[...p,e].slice(-1000);sv(SK.nutrition,n);return n;});setNCal("");setNPro("");setNCarb("");setNFat("");setNNote("");},[nCal,nPro,nCarb,nFat,nNote,today]);
   const delNut=useCallback(time=>{setNutrition(p=>{const n=p.filter(e=>e.time!==time);sv(SK.nutrition,n);return n;});},[]);
   // Body
-  const[bW,setBW]=useState("");const[bWa,setBWa]=useState("");const[bNa,setBNa]=useState("");const[bCh,setBCh]=useState("");
-  const addBody=useCallback(()=>{if(!bW&&!bWa)return;const e={date:today,weight:+bW||null,waist:+bWa||null,navel:+bNa||null,chest:+bCh||null,time:new Date().toISOString()};
-    setBodyData(p=>{const n=[...p,e].slice(-500);sv(SK.body,n);return n;});setBW("");setBWa("");setBNa("");setBCh("");},[bW,bWa,bNa,bCh,today]);
+  const[bW,setBW]=useState("");const[bWa,setBWa]=useState("");const[bNa,setBNa]=useState("");const[bLA,setBLA]=useState("");const[bRA,setBRA]=useState("");const[bLT,setBLT]=useState("");const[bRT,setBRT]=useState("");
+  const addBody=useCallback(()=>{if(!bW&&!bWa&&!bNa&&!bLA)return;const e={date:today,weight:+bW||null,waist:+bWa||null,navel:+bNa||null,lArm:+bLA||null,rArm:+bRA||null,lThigh:+bLT||null,rThigh:+bRT||null,time:new Date().toISOString()};
+    setBodyData(p=>{const n=[...p,e].slice(-500);sv(SK.body,n);return n;});setBW("");setBWa("");setBNa("");setBLA("");setBRA("");setBLT("");setBRT("");},[bW,bWa,bNa,bCh,today]);
   const delBody=useCallback(time=>{setBodyData(p=>{const n=p.filter(e=>e.time!==time);sv(SK.body,n);return n;});},[]);
   // Cardio
   const[cType,setCType]=useState("steady");const[cDur,setCDur]=useState("");const[cHR,setCHR]=useState("");const[cConf,setCConf]=useState("");
@@ -522,15 +522,24 @@ export default function App(){
       <div style={{fontSize:9,color:"#f59e0b",letterSpacing:2,textTransform:"uppercase",marginTop:14,marginBottom:6}}>Body</div>
       <div style={{background:"#0f172a",border:"1px solid #1e293b",borderRadius:6,padding:"8px 10px",marginBottom:6}}>
         <div style={{display:"flex",gap:3,marginBottom:3}}>
-          <input type="number" placeholder="wt lb" value={bW} onChange={e=>setBW(e.target.value)} style={{flex:1,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:9,fontFamily:mono}}/>
-          <input type="number" placeholder='waist"' value={bWa} onChange={e=>setBWa(e.target.value)} style={{flex:1,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:9,fontFamily:mono}}/>
-          <input type="number" placeholder='navel"' value={bNa} onChange={e=>setBNa(e.target.value)} style={{flex:1,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:9,fontFamily:mono}}/>
-          <input type="number" placeholder='chest"' value={bCh} onChange={e=>setBCh(e.target.value)} style={{flex:1,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:9,fontFamily:mono}}/>
+          <input type="number" placeholder="wt lb" value={bW} onChange={e=>setBW(e.target.value)} style={{flex:1,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 4px",fontSize:9,fontFamily:mono}}/>
+          <input type="number" placeholder='waist"' value={bWa} onChange={e=>setBWa(e.target.value)} style={{flex:1,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 4px",fontSize:9,fontFamily:mono}}/>
+          <input type="number" placeholder='navel"' value={bNa} onChange={e=>setBNa(e.target.value)} style={{flex:1,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 4px",fontSize:9,fontFamily:mono}}/>
+        </div>
+        <div style={{display:"flex",gap:3,marginBottom:3}}>
+          <input type="number" placeholder='L arm"' value={bLA} onChange={e=>setBLA(e.target.value)} style={{flex:1,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 4px",fontSize:8,fontFamily:mono}}/>
+          <input type="number" placeholder='R arm"' value={bRA} onChange={e=>setBRA(e.target.value)} style={{flex:1,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 4px",fontSize:8,fontFamily:mono}}/>
+          <input type="number" placeholder='L thigh"' value={bLT} onChange={e=>setBLT(e.target.value)} style={{flex:1,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 4px",fontSize:8,fontFamily:mono}}/>
+          <input type="number" placeholder='R thigh"' value={bRT} onChange={e=>setBRT(e.target.value)} style={{flex:1,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 4px",fontSize:8,fontFamily:mono}}/>
+        </div>
+        <div style={{display:"flex",gap:3,marginBottom:3}}>
+          <input type="number" placeholder='L thigh"' value={bLT} onChange={e=>setBLT(e.target.value)} style={{flex:1,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:9,fontFamily:mono}}/>
+          <input type="number" placeholder='R thigh"' value={bRT} onChange={e=>setBRT(e.target.value)} style={{flex:1,height:26,background:"#1e293b",border:"1px solid #334155",borderRadius:3,color:"#e2e8f0",padding:"0 6px",fontSize:9,fontFamily:mono}}/>
         </div>
         <button onClick={addBody} style={{width:"100%",height:26,background:"#22c55e",border:"none",borderRadius:3,color:"#0f172a",fontWeight:700,fontSize:9,cursor:"pointer",fontFamily:mono}}>Log</button>
       </div>
       {bodyData.slice(-5).reverse().map((e,i)=><div key={i} style={{fontSize:8,color:"#94a3b8",fontFamily:mono,padding:"2px 0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <span>{e.date}: {e.weight&&`${e.weight}lb`} {e.waist&&`W:${e.waist}"`} {e.navel&&`N:${e.navel}"`} {e.chest&&`C:${e.chest}"`}</span>
+        <span>{e.date}: {e.weight&&`${e.weight}lb`} {e.waist&&`W:${e.waist}"`} {e.navel&&`N:${e.navel}"`} {e.lArm&&`LA:${e.lArm}"`} {e.rArm&&`RA:${e.rArm}"`} {e.lThigh&&`LT:${e.lThigh}"`} {e.rThigh&&`RT:${e.rThigh}"`}</span>
         <button onClick={()=>delBody(e.time||e.date)} style={{background:"none",border:"none",color:"#ef444466",fontSize:9,cursor:"pointer",fontFamily:mono,padding:"0 4px"}}>x</button>
       </div>)}
 
@@ -598,13 +607,15 @@ export default function App(){
       <div style={{fontSize:9,color:"#f59e0b",letterSpacing:2,marginTop:12,marginBottom:8,textTransform:"uppercase"}}>Body</div>
       {bodyData.length===0?<div style={{fontSize:9,color:"#475569"}}>No data</div>:
         bodyData.slice(-10).reverse().map((e,i)=><div key={i} style={{fontSize:8,color:"#94a3b8",fontFamily:mono,padding:"1px 0"}}>
-          {e.date}: {e.weight&&`${e.weight}lb`} {e.waist&&`W:${e.waist}"`} {e.navel&&`N:${e.navel}"`} {e.chest&&`C:${e.chest}"`}
+          {e.date}: {e.weight&&`${e.weight}lb`} {e.waist&&`W:${e.waist}"`} {e.navel&&`N:${e.navel}"`} {e.lArm&&`LA:${e.lArm}"`} {e.rArm&&`RA:${e.rArm}"`} {e.lThigh&&`LT:${e.lThigh}"`} {e.rThigh&&`RT:${e.rThigh}"`}}
         </div>)}
       {bodyData.length>=2&&(()=>{const f=bodyData[0],l=bodyData[bodyData.length-1];
         return<div style={{fontSize:9,color:"#94a3b8",fontFamily:mono,marginTop:4,background:"#0f172a",padding:"6px 8px",borderRadius:4}}>
           {f.weight&&l.weight&&<div>Weight: {f.weight} → {l.weight} (<span style={{color:l.weight<f.weight?"#22c55e":"#ef4444"}}>{l.weight>f.weight?"+":""}{(l.weight-f.weight).toFixed(1)}</span>)</div>}
           {f.waist&&l.waist&&<div>Waist: {f.waist}" → {l.waist}" (<span style={{color:l.waist<f.waist?"#22c55e":"#ef4444"}}>{l.waist>f.waist?"+":""}{(l.waist-f.waist).toFixed(1)}</span>)</div>}
           {f.navel&&l.navel&&<div>Navel: {f.navel}" → {l.navel}" (<span style={{color:l.navel<f.navel?"#22c55e":"#ef4444"}}>{l.navel>f.navel?"+":""}{(l.navel-f.navel).toFixed(1)}</span>)</div>}
+          {f.lArm&&l.lArm&&<div>L Arm: {f.lArm}" → {l.lArm}" (<span style={{color:l.lArm>f.lArm?"#22c55e":"#ef4444"}}>{l.lArm>f.lArm?"+":""}{(l.lArm-f.lArm).toFixed(1)}</span>)</div>}
+          {f.lThigh&&l.lThigh&&<div>L Thigh: {f.lThigh}" → {l.lThigh}" (<span style={{color:l.lThigh>f.lThigh?"#22c55e":"#ef4444"}}>{l.lThigh>f.lThigh?"+":""}{(l.lThigh-f.lThigh).toFixed(1)}</span>)</div>}
         </div>;})()}
 
       <div style={{fontSize:9,color:"#f59e0b",letterSpacing:2,marginTop:12,marginBottom:8,textTransform:"uppercase"}}>Cardio</div>
