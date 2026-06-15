@@ -140,27 +140,38 @@ function getProgression(name,log,repRange=[6,10],targetRIR=2){
   const h=log[name];
   if(!h||!h.length)return{weight:"",reps:repRange[0],sets:3,note:`First session. Find weight for ${repRange[0]} reps @ RIR ${targetRIR}.`,isNew:true};
   const last=h[h.length-1];const ls=last.sets.filter(s=>s.reps&&s.weight);
-  if(!ls.length)return{weight:"",reps:repRange[0],sets:3,note:"No data last session.",isNew:true};
-  const w=+ls[0].weight,avgR=Math.round(ls.reduce((s,x)=>s+(+x.reps),0)/ls.length);
-  const rirsValid=ls.filter(s=>s.rir!=null&&s.rir!=="");
-  const avgRIR=rirsValid.length?Math.round(rirsValid.reduce((s,x)=>s+(+x.rir),0)/rirsValid.length*10)/10:null;
-  const allTop=ls.every(s=>+s.reps>=repRange[1]);
-  const atTarget=avgRIR!==null&&avgRIR<=targetRIR+0.5;
+  if(!ls.length)return{weight:"",reps:repRange[0],sets:3,note:"No data last session.",isNew:true,ramp:null};
+  // ── PROGRESSION MODEL C: weighted e1RM across ALL sets ──
+  // Every set is one (weight,reps,RIR) data point. RIR turns a submaximal set
+  // into a 1RM estimate: reps-to-failure = reps + RIR, e1RM = w*(1+RTF/30) [Epley].
+  // Estimates are blended, weighted toward near-failure sets (low RIR predicts
+  // 1RM more accurately). This reads ramped loading natively. ramp[] is returned
+  // for the dormant ramp pre-fill (see genSession, line ~358); live code ignores it.
+  const ramp=ls.map(s=>+s.weight);
+  const top=Math.max(...ramp);          // heaviest set = true working load
+  const r5=x=>Math.round(x/5)*5;
+  // deload guard: 3-session volume regression (unchanged trigger, anchored to top set)
   if(h.length>=3){
     const recent3=h.slice(-3);
     const vols=recent3.map(s=>{const ss=s.sets.filter(x=>x.reps&&x.weight);return ss.reduce((a,x)=>a+(+x.reps)*(+x.weight),0);});
-    if(vols[2]<vols[0]*0.9&&vols[1]<vols[0]*0.95){
-      return{weight:Math.round(w*0.7),reps:repRange[0],sets:ls.length,note:`Performance dropped 3 sessions. Cut to 70% (${Math.round(w*0.7)}lb) for 1 week.`,deload:true};
-    }
+    if(vols[2]<vols[0]*0.9&&vols[1]<vols[0]*0.95)
+      return{weight:r5(top*0.7),reps:repRange[0],sets:ls.length,note:`Performance dropped 3 sessions. Cut to 70% (${r5(top*0.7)}lb) for 1 week.`,deload:true,ramp};
   }
-  if(allTop&&atTarget){const inc=w>=100?5:w>=40?5:2.5;
-    return{weight:w+inc,reps:repRange[0],sets:ls.length,note:`Hit ${repRange[1]} reps @ RIR ${avgRIR}. Up +${inc}lb, reset to ${repRange[0]}.`,progressed:true};}
-  if(avgRIR!==null&&avgRIR>targetRIR+1)
-    return{weight:w,reps:Math.min(avgR+1,repRange[1]),sets:ls.length,note:`RIR ${avgRIR} too easy. Add a rep. Target RIR ${targetRIR}.`,tooEasy:true};
-  if(avgRIR!==null&&avgRIR<1)
-    return{weight:Math.max(0,w-5),reps:avgR,sets:ls.length,note:`RIR ${avgRIR}: too close to failure. Back off -5lb.`,tooHard:true};
-  return{weight:w,reps:Math.min(avgR+1,repRange[1]),sets:ls.length,
-    note:`Last: ${avgR}r x ${w}lb${avgRIR!==null?` @ RIR ${avgRIR}`:""}. Target: ${Math.min(avgR+1,repRange[1])}r @ RIR ${targetRIR}.`};
+  const rs=ls.filter(s=>s.rir!=null&&s.rir!==""); // sets with RIR logged
+  if(!rs.length){ // no RIR → can't gauge effort; hold top load, nudge reps
+    const avgR=Math.round(ls.reduce((s,x)=>s+(+x.reps),0)/ls.length);
+    return{weight:top,reps:Math.min(avgR+1,repRange[1]),sets:ls.length,note:`No RIR logged. Hold ${top}lb, target ${Math.min(avgR+1,repRange[1])}r.`,ramp};
+  }
+  let num=0,den=0;
+  rs.forEach(s=>{const rtf=(+s.reps)+(+s.rir);const e=(+s.weight)*(1+rtf/30);const rel=1/(1+(+s.rir));num+=e*rel;den+=rel;});
+  const e1rm=Math.round(num/den);
+  const tw=r5(e1rm/(1+(repRange[0]+targetRIR)/30)); // weight for bottom-of-range @ target RIR
+  const base={reps:repRange[0],sets:ls.length,ramp};
+  if(tw>top)
+    return{weight:tw,note:`e1RM ${e1rm} from ${rs.length} sets. Up to ${tw}lb for ${repRange[0]}r @ RIR ${targetRIR}.`,progressed:true,...base};
+  if(tw<top-2)
+    return{weight:tw,note:`e1RM ${e1rm} from ${rs.length} sets. Pull back to ${tw}lb for ${repRange[0]}r @ RIR ${targetRIR}.`,tooHard:true,...base};
+  return{weight:tw,note:`e1RM ${e1rm} from ${rs.length} sets. Hold ${tw}lb for ${repRange[0]}r @ RIR ${targetRIR}.`,...base};
 }
 
 // ── VOLUME ──
@@ -355,7 +366,23 @@ export default function App(){
       const prog=getProgression(anchors[p.id],anchorLog);
       const n=isDeload?2:(prog.sets||3);
       const w=isDeload&&prog.weight?Math.round(+prog.weight*0.7):prog.weight;
+      // ── LIVE: flat prescription (every set same weight) ──
       sets[p.id]=Array.from({length:n},()=>({reps:prog.reps||"",weight:w||"",rir:"",pain:"",ts:null}));
+      // ── DORMANT: ramp/progressive pre-fill. Marker: RAMP_PREFILL ──
+      // To enable ascending per-set loading: comment out the flat line above,
+      // uncomment the block below. Reuses last session's ramp shape (prog.ramp),
+      // scaled so its top set = this session's target weight `w`. Touches nothing else.
+      // const rampShape = prog.ramp && prog.ramp.length ? prog.ramp : null;
+      // const rampTop = rampShape ? Math.max(...rampShape) : 0;
+      // if (rampShape && rampTop > 0) {
+      //   sets[p.id] = Array.from({length:n}, (_,i) => ({
+      //     reps: prog.reps||"",
+      //     weight: Math.round(((rampShape[i] ?? rampTop)/rampTop)*(w||rampTop)/5)*5 || "",
+      //     rir:"", pain:"", ts:null
+      //   }));
+      // } else {
+      //   sets[p.id] = Array.from({length:n}, () => ({reps:prog.reps||"",weight:w||"",rir:"",pain:"",ts:null}));
+      // }
     });
     setAnchorSets(sets);
     setAccs(genAcc(accCount,banned,prefs,fatigue,weekVol));
