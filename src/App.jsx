@@ -851,7 +851,7 @@ export default function App(){
               <span style={{fontFamily:mono,fontSize:11,color:C.dim}}>{c.k.toUpperCase()}</span>
               <span style={{fontFamily:mono,fontSize:10,color:cf.c,border:`1px solid ${cf.c}`,borderRadius:3,padding:"1px 6px"}}>{cf.t}</span>
             </div>
-            {n<4||r==null?<div style={{color:C.steel,fontSize:13}}>Building · needs \u22654 aligned weeks (have {n})</div>:
+            {n<4||r==null?<div style={{color:C.steel,fontSize:13}}>Building · needs ≥4 aligned weeks (have {n})</div>:
               <div style={{fontSize:14,color:C.bone}}>r = <b style={{color:Math.abs(r)>=0.5?C.amber:C.steel}}>{r.toFixed(2)}</b> · {Math.abs(r)<0.25?"no clear link":(r>0?c.pos:c.neg)} <span style={{color:C.dim}}>(n={n})</span></div>}
           </div>;});})()}
 
