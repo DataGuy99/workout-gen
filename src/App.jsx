@@ -266,26 +266,44 @@ function getMesoState(meso){
 }
 
 // ── ACCESSORIES ──
-function shuffle(a){const b=[...a];for(let i=b.length-1;i>0;i--){const j=Math.floor(Math.random()*(i+1));[b[i],b[j]]=[b[j],b[i]];}return b;}
-function genAcc(n,banned,prefs,fatigue,weekVol){
+// Per-muscle load (hard-set-equivalent: sets x muscle involvement%) from today's
+// anchors. Read-only input to accessory selection; anchors are never modified.
+function anchorMuscleLoad(anchors,sets){
+  const load={};MUSCLES.forEach(m=>load[m]=0);
+  PATTERNS.forEach(p=>{const nm=anchors[p.id];if(!nm)return;const ex=EXERCISES.find(x=>x.name===nm);if(!ex)return;
+    const nSets=(sets[p.id]||[]).length||3;
+    [...ex.p,...ex.s].forEach(({m,p:pct})=>{load[m]=(load[m]||0)+nSets*(pct/100);});});
+  return load;
+}
+
+function genAcc(n,banned,prefs,fatigue,weekVol,anchorLoad){
   const pool=ACC_POOL.filter(e=>!banned.includes(e.name));
+  const cap=m=>VOL_LANDMARKS[m]?.mav||12;                 // per-session target ceiling
+  const load={};MUSCLES.forEach(m=>load[m]=(anchorLoad&&anchorLoad[m])||0); // seed with anchor load
   const fw={};MUSCLES.forEach(m=>{const f=fatigue[m]||0;fw[m]=f>=4?0.1:f===3?0.4:f===2?0.7:f===1?0.9:1.0;});
-  const underserved=MUSCLES.filter(m=>weekVol[m]<(VOL_LANDMARKS[m]?.mev||6));
-  const weighted=shuffle(pool).map(ex=>{
-    const stars=prefs[ex.name]||0;const mult=stars===0?1:stars===1?1.3:stars===2?1.6:2.0;
-    const allM=[...ex.p,...ex.s];const avgFw=allM.reduce((s,{m,p})=>s+fw[m]*(p/100),0);
-    const underBoost=allM.some(({m})=>underserved.includes(m))?1.5:1;
-    return{ex,weight:mult*avgFw*underBoost};
-  }).filter(x=>x.weight>0.1).sort((a,b)=>b.weight-a.weight);
-  const sel=[];const used=new Set();
   const bwLoad=(ld(SK.body,[]).slice().reverse().find(e=>e.weight)||{}).weight||0;
-  for(const{ex}of weighted){
-    if(sel.length>=n||used.has(ex.name))continue;
-    const sug=getProgression(ex.name,ld(SK.accLog,{})||{},[10,15],2,bwLoad);
-    sel.push({id:crypto.randomUUID(),name:ex.name,eq:ex.eq,cat:ex.cat,p:ex.p,s:ex.s,
+  const ACC_SETS=2;
+  const sel=[];const used=new Set();
+  while(sel.length<n){
+    // score every remaining candidate against CURRENT running load (anchors + picks so far)
+    const scored=pool.filter(e=>!used.has(e.name)).map(ex=>{
+      const stars=prefs[ex.name]||0;const mult=stars===0?1:stars===1?1.3:stars===2?1.6:2.0;
+      const allM=[...ex.p,...ex.s];let fit=0,wsum=0;
+      allM.forEach(({m,p:pct})=>{const w=pct/100;const head=Math.max(0,cap(m)-(load[m]||0));const frac=head/(cap(m)||1);fit+=frac*w*fw[m];wsum+=w;});
+      fit=wsum?fit/wsum:0;
+      const underBoost=allM.some(({m})=>weekVol[m]<(VOL_LANDMARKS[m]?.mev||6))?1.3:1;
+      return{ex,allM,score:mult*fit*underBoost};
+    }).filter(x=>x.score>0.001).sort((a,b)=>b.score-a.score);
+    if(!scored.length)break;                               // nothing left with headroom: round-up complete
+    const top=scored.slice(0,Math.min(6,scored.length));   // weighted-random among top for variety
+    const tot=top.reduce((s,x)=>s+x.score,0);let r=Math.random()*tot,pick=top[0];
+    for(const c of top){r-=c.score;if(r<=0){pick=c;break;}}
+    pick.allM.forEach(({m,p:pct})=>{load[m]=(load[m]||0)+ACC_SETS*(pct/100);}); // add this pick's load
+    const sug=getProgression(pick.ex.name,ld(SK.accLog,{})||{},[10,15],2,bwLoad);
+    sel.push({id:crypto.randomUUID(),name:pick.ex.name,eq:pick.ex.eq,cat:pick.ex.cat,p:pick.ex.p,s:pick.ex.s,
       sugReps:sug.reps||10,sugWeight:sug.weight||"",locked:false,
       sets:[{reps:sug.reps||"",weight:sug.weight||"",rir:""},{reps:sug.reps||"",weight:sug.weight||"",rir:""}]});
-    used.add(ex.name);
+    used.add(pick.ex.name);
   }
   return sel;
 }
@@ -463,7 +481,7 @@ export default function App(){
       // }
     });
     setAnchorSets(sets);
-    setAccs(genAcc(accCount,banned,prefs,fatigue,weekVol));
+    setAccs(genAcc(accCount,banned,prefs,fatigue,weekVol,anchorMuscleLoad(anchors,sets)));
   },[anchors,anchorLog,accCount,banned,prefs,fatigue,weekVol,mesoState.phase,latestBW]);
 
   useEffect(()=>{if(allSet&&!setup)initSession();},[allSet,setup]);
@@ -475,7 +493,10 @@ export default function App(){
   const rmAcc=useCallback((id,idx)=>setAccs(p=>p.map(a=>a.id===id?{...a,sets:a.sets.filter((_,i)=>i!==idx)}:a)),[]);
   const addAccSet=useCallback(id=>setAccs(p=>p.map(a=>a.id===id?{...a,sets:[...a.sets,{reps:"",weight:"",rir:""}]}:a)),[]);
   const togLock=useCallback(id=>setAccs(p=>p.map(a=>a.id===id?{...a,locked:!a.locked}:a)),[]);
-  const rerollAcc=useCallback(()=>{const locked=accs.filter(a=>a.locked);const newAccs=genAcc(accCount-locked.length,banned,prefs,fatigue,weekVol);setAccs([...locked,...newAccs]);},[accs,accCount,banned,prefs,fatigue,weekVol]);
+  const rerollAcc=useCallback(()=>{const locked=accs.filter(a=>a.locked);
+    const seed=anchorMuscleLoad(anchors,anchorSets);
+    locked.forEach(a=>[...a.p,...a.s].forEach(({m,p:pct})=>{seed[m]=(seed[m]||0)+(a.sets.length)*(pct/100);}));
+    const newAccs=genAcc(accCount-locked.length,banned,prefs,fatigue,weekVol,seed);setAccs([...locked,...newAccs]);},[accs,accCount,banned,prefs,fatigue,weekVol,anchors,anchorSets]);
 
   const saveSession=useCallback(()=>{
     const newAL={...anchorLog};
