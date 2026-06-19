@@ -695,6 +695,12 @@ export default function App(){
 
       <VolDash weekVol={weekVol}/>
 
+      <div style={{display:"flex",gap:8,alignItems:"center",margin:"0 0 10px",flexWrap:"wrap"}}>
+        <span style={{fontFamily:mono,fontSize:11,color:C.dim,flexShrink:0}}>ECCENTRIC</span>
+        <button className={`daytype${eccEnabled?" on":""}`} style={{flex:0,padding:"0 12px",height:32}} onClick={()=>setEccEnabled(v=>{const n=!v;sv(SK.eccentrix,n);return n;})}>{eccEnabled?"ON":"OFF"}</button>
+        <span style={{fontFamily:mono,fontSize:10,color:C.steel}}>eccentric-assisted BW progression</span>
+      </div>
+
       {!allSet||setup?<>
         <div className="eyebrow"><span style={{color:C.arc}}>Select 6 anchors</span></div>
         {PATTERNS.map(p=><div key={p.id} className="card plate">
@@ -885,11 +891,6 @@ export default function App(){
           <button className={`daytype${profile.sex==="male"?" on":""}`} style={{flex:0,padding:"0 14px",height:36}} onClick={()=>setProf("sex","male")}>M</button>
           <button className={`daytype${profile.sex==="female"?" on":""}`} style={{flex:0,padding:"0 14px",height:36}} onClick={()=>setProf("sex","female")}>F</button>
           {latestBW>0&&<span style={{fontFamily:mono,fontSize:11,color:C.steel,marginLeft:"auto"}}>{latestBW}lb</span>}
-        </div>
-        <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:8,flexWrap:"wrap"}}>
-          <span style={{fontFamily:mono,fontSize:11,color:C.dim,flexShrink:0}}>ECCENTRIC</span>
-          <button className={`daytype${eccEnabled?" on":""}`} style={{flex:0,padding:"0 14px",height:36}} onClick={()=>setEccEnabled(v=>{const n=!v;sv(SK.eccentrix,n);return n;})}>{eccEnabled?"ON":"OFF"}</button>
-          <span style={{fontFamily:mono,fontSize:10,color:C.steel}}>eccentric-assisted bodyweight progression</span>
         </div>
         <div className="grid3">
           <select className="in sm" value={cType} onChange={e=>setCType(e.target.value)} style={{width:96,flexShrink:0}}>
