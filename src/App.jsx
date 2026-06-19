@@ -8,7 +8,7 @@ const SK={anchors:"wg2-anchors",anchorLog:"wg2-anchor-log",accLog:"wg2-acc-log",
   banned:"wg2-banned",prefs:"wg2-prefs",nutrition:"wg2-nutrition",body:"wg2-body",cardio:"wg2-cardio",
   daytargets:"wg2-daytargets",dayoverrides:"wg2-dayoverrides",
   profile:"wg2-profile",
-  meso:"wg2-meso",history:"wg2-history"};
+  meso:"wg2-meso",history:"wg2-history",metgoal:"wg2-metgoal"};
 
 // ── DESIGN TOKENS ──
 const mono="'JetBrains Mono','Fira Code',monospace";
@@ -168,6 +168,11 @@ function cardioBurn(e,weightLb,age,sex){
 // ── PROGRESSION ──
 // Eccentric (negative-only) reps count as partial credit toward bodyweight progression.
 const ECC_DISCOUNT=0.5;
+// MET-hours: 1 MET = 1 kcal/kg/hr, so cardio MET-hr = kcal/bodyweight-kg. When kcal is
+// unavailable (no HR/weight), fall back to type METs x hours. Resistance has no kcal log,
+// so it always uses a MET value x duration. All tunable.
+const RESIST_MET=5;                                    // vigorous resistance training
+const CARDIO_MET={steady:7,hiit:9};                    // fallback when kcal/kg unavailable
 // ── BODYWEIGHT PROGRESSION ──
 // For bw-tagged exercises: load is fixed (bodyweight + any added), progress by
 // reps (or seconds for holds). Reads sets by reps only, never the weight filter.
@@ -464,6 +469,7 @@ export default function App(){
   const[cardioData,setCardioData]=useState(()=>ld(SK.cardio,[]));
   const[meso,setMeso]=useState(()=>ld(SK.meso,{startDate:null,length:5}));
   const[sessHist,setSessHist]=useState(()=>ld(SK.history,[]));
+  const[metGoal,setMetGoal]=useState(()=>ld(SK.metgoal,40));
   const[setup,setSetup]=useState(false);
   const[dayTargets,setDayTargets]=useState(()=>ld(SK.daytargets,Array.from({length:7},()=>({cal:2400,pro:190,carb:208,fat:90}))));
   const[dayOverrides,setDayOverrides]=useState(()=>ld(SK.dayoverrides,{}));
@@ -865,7 +871,7 @@ export default function App(){
         </div>
         <div className="grid3">
           <select className="in sm" value={cType} onChange={e=>setCType(e.target.value)} style={{width:96,flexShrink:0}}>
-            <option value="steady">Steady</option><option value="hiit">HIIT</option><option value="walk">Walk</option>
+            <option value="steady">Steady</option><option value="hiit">HIIT</option>
           </select>
           <input className="in sm" type="number" inputMode="numeric" placeholder="min" value={cDur} onChange={e=>setCDur(e.target.value)} style={{flex:1}}/>
           <input className="in sm" type="number" inputMode="numeric" placeholder="avg HR" value={cHR} onChange={e=>setCHR(e.target.value)} style={{flex:1}}/>
@@ -1072,6 +1078,41 @@ export default function App(){
           {hrEnts.length>=2&&(()=>{const mn=Math.min(...hrEnts.map(e=>+e.avgHR)),mx=Math.max(...hrEnts.map(e=>+e.avgHR));const rng=mx-mn||1;
             return<><div className="sub" style={{marginBottom:6}}>Avg HR trend (last {hrEnts.length})</div>
             <div className="bars">{hrEnts.map((e,i)=><div key={i} className="bar" style={{height:`${Math.max(((+e.avgHR-mn)/rng)*100,8)}%`,background:i===hrEnts.length-1?C.warn:`${C.warn}55`}}/>)}</div></>;})()}
+        </div>;})()}
+
+      <div className="eyebrow"><span style={{color:C.go}}>MET-hours / week</span></div>
+      {(()=>{
+        const kg=latestBW*0.4536;
+        const cardioW={},resistW={};
+        cardioData.forEach(e=>{const mh=(e.burn!=null&&kg>0)?e.burn/kg:(CARDIO_MET[e.type]||6)*((+e.duration||0)/60);
+          if(mh>0){const w=weekStart(e.date);cardioW[w]=(cardioW[w]||0)+mh;}});
+        sessHist.forEach(h=>{if(!h.durationMin)return;const w=weekStart(h.date);resistW[w]=(resistW[w]||0)+RESIST_MET*(h.durationMin/60);});
+        const weeks=[...new Set([...Object.keys(cardioW),...Object.keys(resistW)])].sort().slice(-8);
+        if(!weeks.length)return<div className="empty">Log cardio or a session to see MET-hours</div>;
+        const rows=weeks.map(w=>({c:cardioW[w]||0,r:resistW[w]||0,t:(cardioW[w]||0)+(resistW[w]||0)}));
+        const cur=rows[rows.length-1];
+        const mx=Math.max(...rows.map(x=>x.t),metGoal,1);
+        const pct=metGoal>0?Math.round((cur.t/metGoal)*100):0;
+        const col=metGoal>0&&cur.t>=metGoal?C.go:cur.t>=metGoal*0.7?C.amber:C.dim;
+        return<div className="card">
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+            <div style={{fontFamily:mono,fontSize:14,color:col}}>{cur.t.toFixed(1)} / {metGoal} <span style={{color:C.dim,fontSize:12}}>MET-hr · {pct}%</span></div>
+            <div style={{display:"flex",alignItems:"center",gap:5}}>
+              <span style={{fontFamily:mono,fontSize:11,color:C.dim}}>goal</span>
+              <input className="in sm" type="number" inputMode="numeric" value={metGoal} onChange={e=>{const v=+e.target.value||0;setMetGoal(v);sv(SK.metgoal,v);}} style={{width:54}}/>
+            </div>
+          </div>
+          <div className="sub" style={{marginBottom:6}}><span style={{color:C.arc}}>■</span> Cardio {cur.c.toFixed(1)} · <span style={{color:C.amber}}>■</span> Lifting {cur.r.toFixed(1)}</div>
+          <div className="bars" style={{position:"relative"}}>
+            {rows.map((x,i)=><div key={i} style={{flex:1,display:"flex",flexDirection:"column",justifyContent:"flex-end",height:"100%"}}>
+              <div style={{height:`${Math.max((x.t/mx)*100,4)}%`,display:"flex",flexDirection:"column",borderRadius:"2px 2px 0 0",overflow:"hidden"}}>
+                <div style={{flex:x.c,background:i===rows.length-1?C.arc:`${C.arc}55`}}/>
+                <div style={{flex:x.r,background:i===rows.length-1?C.amber:`${C.amber}55`}}/>
+              </div>
+            </div>)}
+            {metGoal>0&&<div style={{position:"absolute",left:0,right:0,bottom:`${Math.min((metGoal/mx)*100,100)}%`,borderTop:`1px dashed ${C.go}`,pointerEvents:"none"}}/>}
+          </div>
+          <div className="sub" style={{marginTop:4,color:C.dim,fontSize:11}}>dashed line = goal · last {rows.length} wk</div>
         </div>;})()}
     </>}
     </div>
