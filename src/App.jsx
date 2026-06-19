@@ -221,8 +221,10 @@ function bwProgression(ex,last,repRange,targetRIR,bodyWeight){
   // ── PURE CLEAN: RIR is read as the clean reserve ──
   if(C>=ceiling)                                                              // maxed the rep range: raise difficulty
     return{weight:"",reps:ceiling,sets:ls.length,note:`${loadStr} · ${ceiling}r ceiling${R!==null?` @ RIR ${R}`:""}. Add load or harder variation.`,progressed:true,ramp:added};
-  if(eccOn&&R!==null&&R<1)                                                    // clean failure below ceiling: introduce eccentric overload
-    return{weight:"",reps:C,eccTarget:1,sets:ls.length,note:`${loadStr} · ${C}r @ RIR 0 (failure). Add eccentric → ${C} clean + 1 ecc to push past.`,ramp:added};
+  if(eccOn&&R!==null&&R<1){                                                  // clean failure: back clean reps down into the productive RIR zone, eccentrics carry the overload
+    const nC=Math.max(1,C-targetRIR),nE=C-nC;                               // ~1 rep below failure per RIR -> drop targetRIR reps to reach the target zone
+    return{weight:"",reps:nC,eccTarget:nE,sets:ls.length,note:`${loadStr} · ${C}r @ RIR 0 (failure). Back off → ${nC} clean (~RIR ${targetRIR}) + ${nE} ecc; eccentrics carry the overload.`,ramp:added};
+  }
   if(R===null||R>=RIR_PROGRESS){                                             // slack: add a clean rep
     const t=Math.min(C+1,ceiling);
     return{weight:"",reps:t,sets:ls.length,note:`${loadStr} · ${C}r${R!==null?` @ RIR ${R}`:""} → ${t}r @ target RIR ${targetRIR}.`,ramp:added};
