@@ -166,15 +166,19 @@ function cardioBurn(e,weightLb,age,sex){
 }
 
 // ── PROGRESSION ──
+// Eccentric (negative-only) reps count as partial credit toward bodyweight progression.
+const ECC_DISCOUNT=0.5;
 // ── BODYWEIGHT PROGRESSION ──
 // For bw-tagged exercises: load is fixed (bodyweight + any added), progress by
 // reps (or seconds for holds). Reads sets by reps only, never the weight filter.
 // Returns the same 9-key shape as C; weight:"" so cards/gen show no lb target.
 function bwProgression(ex,last,repRange,targetRIR,bodyWeight){
   const isHold=!!ex.hold,unit=isHold?"s":"r";
-  const ls=last.sets.filter(s=>s.reps);
+  const eff=s=>(+s.reps||0)+(+s.ecc||0)*ECC_DISCOUNT;   // effective reps incl. discounted eccentrics
+  const ls=last.sets.filter(s=>s.reps||s.ecc);
   if(!ls.length)return{weight:"",reps:repRange[0],sets:3,note:`First session. ${isHold?"Hold for time":`Hit ${repRange[0]} reps`} @ RIR ${targetRIR}.`,isNew:true,ramp:null};
-  const avgR=Math.round(ls.reduce((a,s)=>a+(+s.reps),0)/ls.length);
+  const hasEcc=ls.some(s=>+s.ecc>0);
+  const avgR=Math.round(ls.reduce((a,s)=>a+eff(s),0)/ls.length);
   const added=ls.map(s=>+s.weight||0);
   const avgAdd=Math.round(added.reduce((a,b)=>a+b,0)/added.length);
   const load=(+bodyWeight||0)+avgAdd;
@@ -187,7 +191,7 @@ function bwProgression(ex,last,repRange,targetRIR,bodyWeight){
   if(!isHold&&avgR>=ceiling&&(avgRIR===null||avgRIR<=targetRIR+0.5))
     return{weight:"",reps:ceiling,sets:ls.length,note:`${loadStr} · hit ${ceiling}${unit} ceiling${avgRIR!==null?` @ RIR ${avgRIR}`:""}. Add load or harder variation.`,progressed:true,ramp:added};
   const t=isHold?avgR+step:Math.min(avgR+step,ceiling);
-  return{weight:"",reps:t,sets:ls.length,note:`${loadStr} · last ${avgR}${unit}${avgRIR!==null?` @ RIR ${avgRIR}`:""}. Target ${t}${unit} @ RIR ${targetRIR}.`,ramp:added};
+  return{weight:"",reps:t,sets:ls.length,note:`${loadStr} · last ${avgR}${unit}${hasEcc?" (incl ecc)":""}${avgRIR!==null?` @ RIR ${avgRIR}`:""}. Target ${t}${unit} @ RIR ${targetRIR}.`,ramp:added};
 }
 
 function getProgression(name,log,repRange=[6,10],targetRIR=2,bodyWeight=0){
@@ -368,7 +372,7 @@ const Stars=({value,onChange,size=18})=>(<div style={{display:"flex",gap:4}}>
   {[1,2,3].map(s=><span key={s} onClick={e=>{e.stopPropagation();onChange(value===s?0:s);}}
     style={{cursor:"pointer",fontSize:size,color:s<=value?C.amber:C.line,userSelect:"none",lineHeight:1}}>★</span>)}</div>);
 
-function SetRow({set,i,onUp,onRm,showPain,isHold}){
+function SetRow({set,i,onUp,onRm,showPain,isHold,showEcc}){
   const rc=set.rir!=null&&set.rir!==""?RIR_C(+set.rir):C.line;
   const pc=set.pain!=null&&set.pain!==""?PAIN_C(+set.pain):C.line;
   const[running,setRunning]=useState(false);
@@ -388,6 +392,8 @@ function SetRow({set,i,onUp,onRm,showPain,isHold}){
     <input className="in" type="number" inputMode="numeric" placeholder={isHold?"sec":"reps"} value={set.reps||""} onChange={e=>onUp(i,"reps",e.target.value)} style={{flex:1}}/>
     {isHold&&<button className="x" onClick={toggle} title="Hold timer"
       style={{width:62,flexShrink:0,fontFamily:mono,fontSize:12,color:running?C.alarm:C.amber,borderColor:running?C.alarm:C.line}}>{running?`${elapsed}s`:"time"}</button>}
+    {showEcc&&<input className="in" type="number" inputMode="numeric" placeholder="ecc" value={set.ecc??""} onChange={e=>onUp(i,"ecc",e.target.value)} title="Eccentric (negative-only) reps, half credit"
+      style={{width:48,flexShrink:0,color:set.ecc?C.warn:C.bone,borderColor:set.ecc?C.warn:C.line}}/>}
     <input className="in" type="number" inputMode="decimal" placeholder="lbs" value={set.weight||""} onChange={e=>onUp(i,"weight",e.target.value)} style={{width:76,flexShrink:0}}/>
     <input className="in" type="number" inputMode="numeric" placeholder="RIR" value={set.rir!=null?set.rir:""} onChange={e=>onUp(i,"rir",e.target.value)}
       min="0" max="5" style={{width:58,flexShrink:0,borderColor:rc,color:set.rir!==""&&set.rir!=null?rc:C.bone}}/>
@@ -508,18 +514,18 @@ export default function App(){
     const newAL={...anchorLog};
     PATTERNS.forEach(p=>{
       if(!anchors[p.id]||!anchorSets[p.id])return;
-      const logged=anchorSets[p.id].filter(s=>s.reps);if(!logged.length)return;
+      const logged=anchorSets[p.id].filter(s=>s.reps||s.ecc);if(!logged.length)return;
       const nm=anchors[p.id];if(!newAL[nm])newAL[nm]=[];
-      newAL[nm].push({date:new Date().toISOString(),sets:logged.map(s=>({reps:+s.reps,weight:+s.weight||0,rir:s.rir!==""?+s.rir:null,pain:s.pain!==""?+s.pain:null}))});
+      newAL[nm].push({date:new Date().toISOString(),sets:logged.map(s=>({reps:+s.reps||0,weight:+s.weight||0,rir:s.rir!==""?+s.rir:null,pain:s.pain!==""?+s.pain:null,...(s.ecc?{ecc:+s.ecc}:{})}))});
       if(newAL[nm].length>40)newAL[nm]=newAL[nm].slice(-40);
     });
     setAnchorLog(newAL);sv(SK.anchorLog,newAL);
-    const accEntry={date:new Date().toISOString(),exercises:accs.filter(a=>a.sets.some(s=>s.reps)).map(a=>({name:a.name,sets:a.sets.filter(s=>s.reps).map(s=>({reps:+s.reps,weight:+s.weight||0,rir:s.rir!==""?+s.rir:null}))}))};
+    const accEntry={date:new Date().toISOString(),exercises:accs.filter(a=>a.sets.some(s=>s.reps||s.ecc)).map(a=>({name:a.name,sets:a.sets.filter(s=>s.reps||s.ecc).map(s=>({reps:+s.reps||0,weight:+s.weight||0,rir:s.rir!==""?+s.rir:null,...(s.ecc?{ecc:+s.ecc}:{})}))}))};
     const newAccLog=[...accLog,accEntry].slice(-40);setAccLog(newAccLog);sv(SK.accLog,newAccLog);
     const accProg=ld(SK.accLog+"_prog",{});
-    accs.forEach(a=>{const lsd=a.sets.filter(s=>s.reps);if(!lsd.length)return;
+    accs.forEach(a=>{const lsd=a.sets.filter(s=>s.reps||s.ecc);if(!lsd.length)return;
       if(!accProg[a.name])accProg[a.name]=[];
-      accProg[a.name].push({date:new Date().toISOString(),sets:lsd.map(s=>({reps:+s.reps,weight:+s.weight||0,rir:s.rir!==""?+s.rir:null}))});
+      accProg[a.name].push({date:new Date().toISOString(),sets:lsd.map(s=>({reps:+s.reps||0,weight:+s.weight||0,rir:s.rir!==""?+s.rir:null,...(s.ecc?{ecc:+s.ecc}:{})}))});
       if(accProg[a.name].length>20)accProg[a.name]=accProg[a.name].slice(-20);
     });sv(SK.accLog+"_prog",accProg);
     const nf={...fatigue};
@@ -713,7 +719,7 @@ export default function App(){
                 <span className="chip" style={{color:chip.c,background:`${chip.c}1c`,border:`1px solid ${chip.c}44`}}>{chip.t}</span>
                 <p>{prog.note}{prog.weight?<span className="tgt"> → {prog.reps}r × {prog.weight}lb</span>:null}</p>
               </div>
-              {sets.map((s,i)=><SetRow key={i} set={s} i={i} showPain={true} isHold={!!(EXERCISES.find(x=>x.name===anchors[p.id])||{}).hold}
+              {sets.map((s,i)=><SetRow key={i} set={s} i={i} showPain={true} isHold={!!(EXERCISES.find(x=>x.name===anchors[p.id])||{}).hold} showEcc={(()=>{const e=EXERCISES.find(x=>x.name===anchors[p.id])||{};return !!e.bw&&!e.hold;})()}
                 onUp={(idx,f,v)=>updAS(p.id,idx,f,v)} onRm={idx=>rmAS(p.id,idx)}/>)}
               <button className="addset" onClick={()=>addAS(p.id)}>+ set</button>
             </div>);
@@ -737,7 +743,7 @@ export default function App(){
               </div>
             </div>
             <div style={{marginTop:4}}>
-              {a.sets.map((s,i)=><SetRow key={i} set={s} i={i} showPain={false} isHold={!!(EXERCISES.find(x=>x.name===a.name)||{}).hold}
+              {a.sets.map((s,i)=><SetRow key={i} set={s} i={i} showPain={false} isHold={!!(EXERCISES.find(x=>x.name===a.name)||{}).hold} showEcc={(()=>{const e=EXERCISES.find(x=>x.name===a.name)||{};return !!e.bw&&!e.hold;})()}
                 onUp={(idx,f,v)=>updAcc(a.id,idx,f,v)} onRm={idx=>rmAcc(a.id,idx)}/>)}
             </div>
             <button className="addset" onClick={()=>addAccSet(a.id)}>+ set</button>
