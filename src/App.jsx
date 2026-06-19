@@ -6,7 +6,7 @@ const ld=(k,fb)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):fb}
 const sv=(k,d)=>{try{localStorage.setItem(k,JSON.stringify(d))}catch(e){console.error(e)}};
 const SK={anchors:"wg2-anchors",anchorLog:"wg2-anchor-log",accLog:"wg2-acc-log",fatigue:"wg2-fatigue",
   banned:"wg2-banned",prefs:"wg2-prefs",nutrition:"wg2-nutrition",body:"wg2-body",cardio:"wg2-cardio",
-  daytargets:"wg2-daytargets",dayoverrides:"wg2-dayoverrides",
+  daytargets:"wg2-daytargets",
   profile:"wg2-profile",
   meso:"wg2-meso",history:"wg2-history",metgoal:"wg2-metgoal",eccentrix:"wg2-eccentrix"};
 
@@ -133,9 +133,6 @@ const PATTERN_MAP={
 const ALL_PAT_EX=new Set(Object.values(PATTERN_MAP).flat());
 const ACC_POOL=EXERCISES.filter(e=>!ALL_PAT_EX.has(e.name));
 
-const DAY_TARGETS={long_ride:{cal:2900,pro:190,carb:320,fat:95},med_ride:{cal:2600,pro:190,carb:258,fat:90},
-  hiit:{cal:2400,pro:190,carb:208,fat:90},lift:{cal:2400,pro:190,carb:208,fat:90},rest:{cal:2100,pro:190,carb:133,fat:90}};
-const DAY_LABELS={long_ride:"Long ride",med_ride:"Med ride",hiit:"HIIT",lift:"Lift",rest:"Rest"};
 // Monday-anchored week key (YYYY-MM-DD of that week's Monday); sortable.
 function weekStart(dstr){const ds=String(dstr).slice(0,10);const d=new Date(ds+"T00:00:00");const off=(d.getDay()+6)%7;d.setDate(d.getDate()-off);return d.toISOString().slice(0,10);}
 // Least-squares slope of [{x,y}] points (0 if <2 points).
@@ -489,7 +486,6 @@ export default function App(){
   const[eccEnabled,setEccEnabled]=useState(()=>ld(SK.eccentrix,true));
   const[setup,setSetup]=useState(false);
   const[dayTargets,setDayTargets]=useState(()=>ld(SK.daytargets,Array.from({length:7},()=>({cal:2400,pro:190,carb:208,fat:90}))));
-  const[dayOverrides,setDayOverrides]=useState(()=>ld(SK.dayoverrides,{}));
   const[logDate,setLogDate]=useState(()=>new Date().toISOString().slice(0,10));
   const[showTgtEd,setShowTgtEd]=useState(false);
   const[accCount]=useState(3);
@@ -502,8 +498,7 @@ export default function App(){
   const weekVol=useMemo(()=>calcWeeklyVolume(anchorLog,accLog),[anchorLog,accLog]);
   const today=new Date().toISOString().slice(0,10);
   const dow=new Date(logDate+"T00:00:00").getDay();
-  const ovrKey=dayOverrides[logDate];
-  const targets=ovrKey?(DAY_TARGETS[ovrKey]||DAY_TARGETS.lift):(dayTargets[dow]||DAY_TARGETS.lift);
+  const targets=dayTargets[dow]||{cal:2400,pro:190,carb:208,fat:90};
   const dayNut=nutrition.filter(d=>d.date===logDate);
   const nutTotals=dayNut.reduce((s,e)=>({cal:s.cal+e.cal,pro:s.pro+e.pro,carb:s.carb+e.carb,fat:s.fat+e.fat}),{cal:0,pro:0,carb:0,fat:0});
 
@@ -603,7 +598,6 @@ export default function App(){
     setNutrition(p=>{const n=[...p,e].slice(-1000);sv(SK.nutrition,n);return n;});setNCal("");setNPro("");setNCarb("");setNFat("");setNNote("");},[nCal,nPro,nCarb,nFat,nNote,logDate]);
   const delNut=useCallback(time=>{setNutrition(p=>{const n=p.filter(e=>e.time!==time);sv(SK.nutrition,n);return n;});},[]);
   const setDT=(idx,field,val)=>setDayTargets(p=>{const n=p.map((d,i)=>i===idx?{...d,[field]:+val||0}:d);sv(SK.daytargets,n);return n;});
-  const setOvr=key=>setDayOverrides(p=>{const n={...p};if(key)n[logDate]=key;else delete n[logDate];sv(SK.dayoverrides,n);return n;});
   // Body
   const[bW,setBW]=useState("");const[bWa,setBWa]=useState("");const[bNa,setBNa]=useState("");const[bLA,setBLA]=useState("");const[bRA,setBRA]=useState("");const[bLT,setBLT]=useState("");const[bRT,setBRT]=useState("");
   const addBody=useCallback(()=>{if(!bW&&!bWa&&!bNa&&!bLA&&!bRA&&!bLT&&!bRT)return;
@@ -635,13 +629,13 @@ export default function App(){
       h.forEach(e=>{const v=val(e);if(!v)return;const w=weekStart(e.date);(strW[w]=strW[w]||[]).push(v/base);});});
     const strength={};Object.keys(strW).forEach(w=>strength[w]=strW[w].reduce((a,b)=>a+b,0)/strW[w].length*100);
     const byDay={};nutrition.forEach(e=>{byDay[e.date]=(byDay[e.date]||0)+(+e.cal||0);});
-    const balance={};Object.keys(byDay).forEach(date=>{const dw=new Date(String(date).slice(0,10)+"T00:00:00").getDay();const ov=dayOverrides[date];const tgt=(ov?DAY_TARGETS[ov]:dayTargets[dw])?.cal||0;const w=weekStart(date);balance[w]=(balance[w]||0)+(byDay[date]-tgt);});
+    const balance={};Object.keys(byDay).forEach(date=>{const dw=new Date(String(date).slice(0,10)+"T00:00:00").getDay();const tgt=(dayTargets[dw])?.cal||0;const w=weekStart(date);balance[w]=(balance[w]||0)+(byDay[date]-tgt);});
     const wW={};bodyData.filter(e=>e.weight).forEach(e=>{const w=weekStart(e.date);(wW[w]=wW[w]||[]).push(+e.weight);});
     const weight={};Object.keys(wW).forEach(w=>weight[w]=wW[w].reduce((a,b)=>a+b,0)/wW[w].length);
     const cK={},cH={};cardioData.forEach(e=>{const w=weekStart(e.date);const b=e.burn!=null?e.burn:cardioBurn(e,latestBW,profile.age,profile.sex);if(b)cK[w]=(cK[w]||0)+b;if(e.avgHR)(cH[w]=cH[w]||[]).push(+e.avgHR);});
     const cardioHR={};Object.keys(cH).forEach(w=>cardioHR[w]=cH[w].reduce((a,b)=>a+b,0)/cH[w].length);
     return{strength,balance,weight,cardioKcal:cK,cardioHR};
-  },[anchorLog,anchors,nutrition,dayTargets,dayOverrides,bodyData,cardioData,latestBW,profile]);
+  },[anchorLog,anchors,nutrition,dayTargets,bodyData,cardioData,latestBW,profile]);
 
   const bodyVerdict=useMemo(()=>{
     const sl=k=>{const pts=bodyData.filter(e=>e[k]).map(e=>({x:new Date(String(e.date).slice(0,10)+"T00:00:00").getTime()/86400000,y:+e[k]}));return pts.length>=2?slope(pts)*7:null;};
@@ -830,13 +824,9 @@ export default function App(){
           <input className="in sm" type="number" inputMode="numeric" placeholder="F" value={dayTargets[idx].fat||""} onChange={e=>setDT(idx,"fat",e.target.value)} style={{flex:1}}/>
         </div>)}
       </div>}
-      <div className="daytypes" style={{flexWrap:"wrap"}}>
-        <button className={`daytype${!ovrKey?" on":""}`} onClick={()=>setOvr(null)}>Auto</button>
-        {Object.keys(DAY_TARGETS).map(dt=><button key={dt} className={`daytype${ovrKey===dt?" on":""}`} onClick={()=>setOvr(dt)}>{DAY_LABELS[dt]}</button>)}
-      </div>
 
       <div className="card">
-        <div className="target-line">Target {targets.cal} cal · P {targets.pro}g · C {targets.carb}g · F {targets.fat}g <span style={{color:C.dim}}>({ovrKey?`${DAY_LABELS[ovrKey]} override`:`${DOW3[dow]} default`})</span></div>
+        <div className="target-line">Target {targets.cal} cal · P {targets.pro}g · C {targets.carb}g · F {targets.fat}g <span style={{color:C.dim}}>({DOW3[dow]})</span></div>
         <div className="today-line">
           <span style={{color:nutTotals.cal>targets.cal?C.alarm:C.go,fontWeight:600}}>{nutTotals.cal}</span>
           <span style={{color:C.dim}}>/{targets.cal} cal</span>
@@ -1080,7 +1070,7 @@ export default function App(){
       <div className="eyebrow"><span style={{color:C.amber}}>Calorie balance</span></div>
       {(()=>{const byDay={};nutrition.forEach(e=>{byDay[e.date]=(byDay[e.date]||0)+(+e.cal||0);});
         const days=Object.keys(byDay);if(!days.length)return<div className="empty">No nutrition logged</div>;
-        const wk={};days.forEach(date=>{const dw=new Date(date+"T00:00:00").getDay();const ov=dayOverrides[date];const tgt=(ov?DAY_TARGETS[ov]:dayTargets[dw])?.cal||0;const w=weekStart(date);wk[w]=(wk[w]||0)+(byDay[date]-tgt);});
+        const wk={};days.forEach(date=>{const dw=new Date(date+"T00:00:00").getDay();const tgt=(dayTargets[dw])?.cal||0;const w=weekStart(date);wk[w]=(wk[w]||0)+(byDay[date]-tgt);});
         const weeks=Object.keys(wk).sort().slice(-8);const bals=weeks.map(w=>Math.round(wk[w]));
         const amax=Math.max(...bals.map(Math.abs),1);const last=bals[bals.length-1];
         return<div className="card">
