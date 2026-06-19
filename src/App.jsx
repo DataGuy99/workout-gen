@@ -163,8 +163,15 @@ function cardioBurn(e,weightLb,age,sex){
 }
 
 // ── PROGRESSION ──
-// Eccentric (negative-only) reps count as partial credit toward bodyweight progression.
-const ECC_DISCOUNT=0.5;
+// Research-grounded RIR (reps-in-reserve) targets. Meta-regressions (Robinson 2023;
+// Refalo 2023/2024, Sports Medicine) place the hypertrophy-productive zone at ~1-3 RIR:
+// gains drop off past ~4-5 RIR, while training to failure (0 RIR) adds fatigue without
+// proportional hypertrophy and doesn't aid strength. So bodyweight clean reps progress
+// when there's slack (>=RIR_PROGRESS), hold in the optimal 1-2 band, and at failure
+// (0 RIR) a fixed-load movement gets eccentric overload -- load can't be dropped, and
+// eccentric actions are ~40% stronger and fatigue less, so negatives are the lever past
+// a sticking point. Once eccentrics are in play, logged RIR refers to the eccentric reps.
+const RIR_PROGRESS=3;
 // MET-hours: 1 MET = 1 kcal/kg/hr, so cardio MET-hr = kcal/bodyweight-kg. When kcal is
 // unavailable (no HR/weight), fall back to type METs x hours. Resistance has no kcal log,
 // so it always uses a MET value x duration. All tunable.
@@ -176,8 +183,7 @@ const CARDIO_MET={steady:7,hiit:9};                    // fallback when kcal/kg 
 // Returns the same 9-key shape as C; weight:"" so cards/gen show no lb target.
 function bwProgression(ex,last,repRange,targetRIR,bodyWeight){
   const eccOn=ld(SK.eccentrix,true);
-  const isHold=!!ex.hold,unit=isHold?"s":"r";
-  const eff=s=>(+s.reps||0)+(eccOn?(+s.ecc||0)*ECC_DISCOUNT:0);   // effective reps incl. discounted eccentrics
+  const isHold=!!ex.hold;
   const ls=last.sets.filter(s=>eccOn?(s.reps||s.ecc):s.reps);
   if(!ls.length)return{weight:"",reps:repRange[0],sets:3,note:`First session. ${isHold?"Hold for time":`Hit ${repRange[0]} reps`} @ RIR ${targetRIR}.`,isNew:true,ramp:null};
   const added=ls.map(s=>+s.weight||0);
@@ -185,34 +191,43 @@ function bwProgression(ex,last,repRange,targetRIR,bodyWeight){
   const load=(+bodyWeight||0)+avgAdd;
   const loadStr=load>0?`${load}lb`:"BW";
   const rs=ls.filter(s=>s.rir!=null&&s.rir!=="");
-  const avgRIR=rs.length?Math.round(rs.reduce((a,x)=>a+(+x.rir),0)/rs.length*10)/10:null;
-  const step=isHold?5:1,ceiling=repRange[1];
-  // ── ECCENTRIC PHASE: dynamic bodyweight with eccentrics in use — shift mix toward all-clean ──
-  if(eccOn&&!isHold){
-    const avgClean=Math.round(ls.reduce((a,s)=>a+(+s.reps||0),0)/ls.length);
-    const avgEcc=Math.round(ls.reduce((a,s)=>a+(+s.ecc||0),0)/ls.length);
-    if(avgEcc>0){
-      const total=avgClean+avgEcc;
-      if(avgRIR!==null&&avgRIR<1)                          // near failure even with assist: hold the mix
-        return{weight:"",reps:avgClean,eccTarget:avgEcc,sets:ls.length,note:`${loadStr} · ${avgClean} clean + ${avgEcc} ecc @ RIR ${avgRIR}. Near failure — hold ${avgClean}+${avgEcc}.`,tooHard:true,ramp:added};
-      const tClean=avgClean+1,tEcc=Math.max(0,total-tClean); // trade one eccentric for one clean
-      if(tEcc===0)                                          // reached full clean set: graduate off eccentrics
-        return{weight:"",reps:total,eccTarget:0,sets:ls.length,note:`${loadStr} · ${avgClean} clean + ${avgEcc} ecc → ${total} all clean now. Off eccentrics; build reps from here.`,progressed:true,ramp:added};
-      return{weight:"",reps:tClean,eccTarget:tEcc,sets:ls.length,note:`${loadStr} · last ${avgClean} clean + ${avgEcc} ecc. Do ${tClean} clean + ${tEcc} ecc @ RIR ${targetRIR}.`,ramp:added};
-    }
-    else if(avgRIR!==null&&avgRIR<1&&avgClean<ceiling){ // clean failure, no eccentrics yet: start overload to break the plateau
-      return{weight:"",reps:avgClean,eccTarget:1,sets:ls.length,note:`${loadStr} · ${avgClean}r @ RIR ${avgRIR}, clean failure. Add eccentrics → ${avgClean} clean + 1 ecc to push past.`,ramp:added};
-    }
+  const R=rs.length?Math.round(rs.reduce((a,x)=>a+(+x.rir),0)/rs.length):null; // avg RIR; refers to eccentric reps when eccentrics are present
+  const step=isHold?5:1,ceiling=repRange[1],floor=repRange[0];
+  const C=Math.round(ls.reduce((a,s)=>a+(+s.reps||0),0)/ls.length);          // avg clean reps (or seconds for holds)
+
+  // ── HOLDS (isometric): time progression, no rep/eccentric bands ──
+  if(isHold){
+    if(R!==null&&R<1){const t=Math.max(floor,C-step);return{weight:"",reps:t,sets:ls.length,note:`${loadStr} · last ${C}s @ RIR ${R}, at failure. Hold ${t}s.`,tooHard:true,ramp:added};}
+    const t=C+step;return{weight:"",reps:t,sets:ls.length,note:`${loadStr} · last ${C}s${R!==null?` @ RIR ${R}`:""}. Target ${t}s.`,ramp:added};
   }
-  // ── NORMAL: full clean reps / holds / loaded bodyweight ──
-  const avgR=Math.round(ls.reduce((a,s)=>a+eff(s),0)/ls.length);
-  const hasEcc=eccOn&&ls.some(s=>+s.ecc>0);
-  if(avgRIR!==null&&avgRIR<1){const t=Math.max(repRange[0],avgR-step);
-    return{weight:"",reps:t,sets:ls.length,note:`${loadStr} · last ${avgR}${unit} @ RIR ${avgRIR}. Near failure, hold ${t}${unit}.`,tooHard:true,ramp:added};}
-  if(!isHold&&avgR>=ceiling&&(avgRIR===null||avgRIR<=targetRIR+0.5))
-    return{weight:"",reps:ceiling,sets:ls.length,note:`${loadStr} · hit ${ceiling}${unit} ceiling${avgRIR!==null?` @ RIR ${avgRIR}`:""}. Add load or harder variation.`,progressed:true,ramp:added};
-  const t=isHold?avgR+step:Math.min(avgR+step,ceiling);
-  return{weight:"",reps:t,sets:ls.length,note:`${loadStr} · last ${avgR}${unit}${hasEcc?" (incl ecc)":""}${avgRIR!==null?` @ RIR ${avgRIR}`:""}. Target ${t}${unit} @ RIR ${targetRIR}.`,ramp:added};
+
+  const E=eccOn?Math.round(ls.reduce((a,s)=>a+(+s.ecc||0),0)/ls.length):0;    // avg eccentric reps
+  const total=C+E;
+
+  // ── ECCENTRIC PHASE: eccentrics in play; RIR is read as the eccentric reserve ──
+  if(eccOn&&E>0){
+    if(R===null||R>=RIR_PROGRESS){                                            // eccentrics have slack: trade one for a clean rep
+      const nC=Math.min(C+1,ceiling),nE=Math.max(0,total-nC);
+      if(nE===0)return{weight:"",reps:Math.min(total,ceiling),eccTarget:0,sets:ls.length,note:`${loadStr} · ${C} clean + ${E} ecc → ${Math.min(total,ceiling)} all clean now. Off eccentrics.`,progressed:true,ramp:added};
+      return{weight:"",reps:nC,eccTarget:nE,sets:ls.length,note:`${loadStr} · ecc RIR ${R} (slack) → ${nC} clean + ${nE} ecc.`,ramp:added};
+    }
+    if(R<1){                                                                  // eccentric failure: ease the mix (fewer clean, more eccentric)
+      if(C>1)return{weight:"",reps:C-1,eccTarget:E+1,sets:ls.length,note:`${loadStr} · ${C} clean + ${E} ecc @ ecc RIR 0. Ease → ${C-1} clean + ${E+1} ecc.`,tooHard:true,ramp:added};
+      return{weight:"",reps:C,eccTarget:E,sets:ls.length,note:`${loadStr} · ${C} clean + ${E} ecc @ ecc RIR 0. Hold ${C}+${E}.`,tooHard:true,ramp:added};
+    }
+    return{weight:"",reps:C,eccTarget:E,sets:ls.length,note:`${loadStr} · ${C} clean + ${E} ecc @ ecc RIR ${R} (optimal). Hold ${C}+${E}.`,ramp:added};
+  }
+
+  // ── PURE CLEAN: RIR is read as the clean reserve ──
+  if(C>=ceiling)                                                              // maxed the rep range: raise difficulty
+    return{weight:"",reps:ceiling,sets:ls.length,note:`${loadStr} · ${ceiling}r ceiling${R!==null?` @ RIR ${R}`:""}. Add load or harder variation.`,progressed:true,ramp:added};
+  if(eccOn&&R!==null&&R<1)                                                    // clean failure below ceiling: introduce eccentric overload
+    return{weight:"",reps:C,eccTarget:1,sets:ls.length,note:`${loadStr} · ${C}r @ RIR 0 (failure). Add eccentric → ${C} clean + 1 ecc to push past.`,ramp:added};
+  if(R===null||R>=RIR_PROGRESS){                                             // slack: add a clean rep
+    const t=Math.min(C+1,ceiling);
+    return{weight:"",reps:t,sets:ls.length,note:`${loadStr} · ${C}r${R!==null?` @ RIR ${R}`:""} → ${t}r @ target RIR ${targetRIR}.`,ramp:added};
+  }
+  return{weight:"",reps:C,sets:ls.length,note:`${loadStr} · ${C}r @ RIR ${R} (optimal zone). Hold ${C}r.`,ramp:added}; // RIR 1-2: hold
 }
 
 function getProgression(name,log,repRange=[6,10],targetRIR=2,bodyWeight=0){
