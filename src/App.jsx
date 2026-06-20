@@ -137,6 +137,25 @@ const ACC_POOL=EXERCISES.filter(e=>!ALL_PAT_EX.has(e.name));
 function weekStart(dstr){const ds=String(dstr).slice(0,10);const d=new Date(ds+"T00:00:00");const off=(d.getDay()+6)%7;d.setDate(d.getDate()-off);return d.toISOString().slice(0,10);}
 // Least-squares slope of [{x,y}] points (0 if <2 points).
 function slope(pts){const n=pts.length;if(n<2)return 0;const sx=pts.reduce((a,p)=>a+p.x,0),sy=pts.reduce((a,p)=>a+p.y,0),sxy=pts.reduce((a,p)=>a+p.x*p.y,0),sxx=pts.reduce((a,p)=>a+p.x*p.x,0);const d=n*sxx-sx*sx;return d===0?0:(n*sxy-sx*sy)/d;}
+
+// Per-week trend for a body metric. When there are >=5 measurements logged across a
+// spread of times of day (>=~1h std), time-of-day is added as a covariate (2-variable
+// least squares) so the long-term trend is separated from intraday timing variation;
+// otherwise a plain date slope. Uses the auto-captured log timestamp as the measure time,
+// so it works best when you log promptly after measuring. null if <2 points.
+function bodyTrend(entries,key){
+  const pts=(entries||[]).filter(e=>e[key]!=null&&e[key]!==""&&e.time).map(e=>{const t=new Date(e.time);
+    return{d:new Date(String(e.date).slice(0,10)+"T00:00:00").getTime()/86400000,h:t.getHours()+t.getMinutes()/60,y:+e[key]};});
+  if(pts.length<2)return null;
+  const plain=()=>slope(pts.map(p=>({x:p.d,y:p.y})))*7;
+  if(pts.length<5)return plain();
+  const n=pts.length,md=pts.reduce((a,p)=>a+p.d,0)/n,mh=pts.reduce((a,p)=>a+p.h,0)/n,my=pts.reduce((a,p)=>a+p.y,0)/n;
+  let Sdd=0,Shh=0,Sdh=0,Sdy=0,Shy=0;
+  pts.forEach(p=>{const d=p.d-md,h=p.h-mh,y=p.y-my;Sdd+=d*d;Shh+=h*h;Sdh+=d*h;Sdy+=d*y;Shy+=h*y;});
+  const det=Sdd*Shh-Sdh*Sdh;
+  if(Shh<n||Math.abs(det)<1e-9)return plain();                 // no real time spread or collinear -> plain slope
+  return ((Sdy*Shh-Shy*Sdh)/det)*7;                            // day slope, controlling for time of day
+}
 // Pearson r of [[x,y],...]; null if <3 pairs or zero variance.
 function pearson(pairs){const n=pairs.length;if(n<3)return null;const sx=pairs.reduce((a,p)=>a+p[0],0),sy=pairs.reduce((a,p)=>a+p[1],0),sxy=pairs.reduce((a,p)=>a+p[0]*p[1],0),sxx=pairs.reduce((a,p)=>a+p[0]*p[0],0),syy=pairs.reduce((a,p)=>a+p[1]*p[1],0);const num=n*sxy-sx*sy,den=Math.sqrt((n*sxx-sx*sx)*(n*syy-sy*sy));return den===0?null:num/den;}
 
@@ -658,7 +677,7 @@ export default function App(){
   },[anchorLog,anchors,nutrition,dayTargets,bodyData,cardioData,latestBW,profile]);
 
   const bodyVerdict=useMemo(()=>{
-    const sl=k=>{const pts=bodyData.filter(e=>e[k]).map(e=>({x:new Date(String(e.date).slice(0,10)+"T00:00:00").getTime()/86400000,y:+e[k]}));return pts.length>=2?slope(pts)*7:null;};
+    const sl=k=>bodyTrend(bodyData,k);
     const w=sl("weight"),wa=sl("waist");
     if(w==null&&wa==null)return null;
     const fW=0.3,fI=0.1;
@@ -1047,9 +1066,7 @@ export default function App(){
         </div>}
       {(()=>{const wd=bodyData.filter(e=>e.weight).map(e=>({date:e.date,w:+e.weight}));
         if(wd.length<2)return null;
-        const t0=new Date(wd[0].date+"T00:00:00").getTime();
-        const pts=wd.map(e=>({x:(new Date(e.date+"T00:00:00").getTime()-t0)/86400000,y:e.w}));
-        const perWk=slope(pts)*7;
+        const perWk=bodyTrend(bodyData,"weight")??0;
         const ws=wd.slice(-12);const mn=Math.min(...ws.map(e=>e.w)),mx=Math.max(...ws.map(e=>e.w));const rng=mx-mn||1;
         return<div className="card plate">
           <div className="pat-eyebrow">Weight trend</div>
@@ -1059,7 +1076,7 @@ export default function App(){
           <div className="stat"><span><b style={{color:C.bone}}>{wd[wd.length-1].w}lb</b> · <span style={{color:perWk<=0?C.go:C.alarm}}>{perWk>0?"+":""}{perWk.toFixed(2)} lb/wk</span> · {wd.length} weigh-ins</span></div>
         </div>;})()}
       {(()=>{const fields=[["waist","Waist",true],["navel","Navel",true]];
-        const rows=fields.map(([k,label,downGood])=>{const pts=bodyData.filter(e=>e[k]).map(e=>({x:new Date(String(e.date).slice(0,10)+"T00:00:00").getTime()/86400000,y:+e[k]}));if(pts.length<2)return null;const perWk=slope(pts)*7;const good=downGood?perWk<=0:perWk>=0;return{label,perWk,good};}).filter(Boolean);
+        const rows=fields.map(([k,label,downGood])=>{const perWk=bodyTrend(bodyData,k);if(perWk==null)return null;const good=downGood?perWk<=0:perWk>=0;return{label,perWk,good};}).filter(Boolean);
         if(!rows.length)return null;
         return<div className="delta-box"><div style={{fontFamily:mono,fontSize:11,color:C.dim,marginBottom:4}}>SLOPE /wk</div>{rows.map((r,i)=><div key={i}>{r.label} <span style={{color:r.good?C.go:C.alarm}}>{r.perWk>0?"+":""}{r.perWk.toFixed(2)}"</span></div>)}</div>;})()}
 
