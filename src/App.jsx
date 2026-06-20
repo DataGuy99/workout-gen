@@ -619,11 +619,11 @@ export default function App(){
   const delNut=useCallback(time=>{setNutrition(p=>{const n=p.filter(e=>e.time!==time);sv(SK.nutrition,n);return n;});},[]);
   const setDT=(idx,field,val)=>setDayTargets(p=>{const n=p.map((d,i)=>i===idx?{...d,[field]:+val||0}:d);sv(SK.daytargets,n);return n;});
   // Body
-  const[bW,setBW]=useState("");const[bWa,setBWa]=useState("");const[bNa,setBNa]=useState("");const[bLA,setBLA]=useState("");const[bRA,setBRA]=useState("");const[bLT,setBLT]=useState("");const[bRT,setBRT]=useState("");
-  const addBody=useCallback(()=>{if(!bW&&!bWa&&!bNa&&!bLA&&!bRA&&!bLT&&!bRT)return;
-    const e={date:today,weight:+bW||null,waist:+bWa||null,navel:+bNa||null,lArm:+bLA||null,rArm:+bRA||null,lThigh:+bLT||null,rThigh:+bRT||null,time:new Date().toISOString()};
+  const[bW,setBW]=useState("");const[bWa,setBWa]=useState("");const[bNa,setBNa]=useState("");
+  const addBody=useCallback(()=>{if(!bW&&!bWa&&!bNa)return;
+    const e={date:today,weight:+bW||null,waist:+bWa||null,navel:+bNa||null,time:new Date().toISOString()};
     setBodyData(p=>{const n=[...p,e].slice(-500);sv(SK.body,n);return n;});
-    setBW("");setBWa("");setBNa("");setBLA("");setBRA("");setBLT("");setBRT("");},[bW,bWa,bNa,bLA,bRA,bLT,bRT,today]);
+    setBW("");setBWa("");setBNa("");},[bW,bWa,bNa,today]);
   const delBody=useCallback(time=>{setBodyData(p=>{const n=p.filter(e=>e.time!==time);sv(SK.body,n);return n;});},[]);
   // Cardio
   const[cType,setCType]=useState("steady");const[cDur,setCDur]=useState("");const[cHR,setCHR]=useState("");const[cConf,setCConf]=useState("");
@@ -659,18 +659,16 @@ export default function App(){
 
   const bodyVerdict=useMemo(()=>{
     const sl=k=>{const pts=bodyData.filter(e=>e[k]).map(e=>({x:new Date(String(e.date).slice(0,10)+"T00:00:00").getTime()/86400000,y:+e[k]}));return pts.length>=2?slope(pts)*7:null;};
-    const w=sl("weight"),wa=sl("waist"),arm=sl("lArm")??sl("rArm");
+    const w=sl("weight"),wa=sl("waist");
     if(w==null&&wa==null)return null;
     const fW=0.3,fI=0.1;
     const wd=w==null?null:(w<-fW?"down":w>fW?"up":"flat");
     const wad=wa==null?null:(wa<-fI?"down":wa>fI?"up":"flat");
-    const armd=arm==null?null:(arm<-fI?"down":arm>fI?"up":"flat");
     let text,tone;
     if(wad==="up"){text=`Waist rising ${wa>0?"+":""}${wa.toFixed(2)}"/wk${wd==="up"?` with weight up ${w.toFixed(2)} lb/wk`:""}. Trending toward fat gain.`;tone=C.alarm;}
-    else if(wad==="down"&&wd==="flat"){text=`Waist down ${wa.toFixed(2)}"/wk at stable weight${armd==="up"?", arms up":""}. Recomposition: fat down, muscle holding.`;tone=C.go;}
+    else if(wad==="down"&&wd==="flat"){text=`Waist down ${wa.toFixed(2)}"/wk at stable weight. Recomposition: fat down, muscle holding.`;tone=C.go;}
     else if(wad==="down"&&wd==="down"){text=`Weight and waist falling together (${w.toFixed(2)} lb/wk, ${wa.toFixed(2)}"/wk). Fat loss.`;tone=C.go;}
     else if(wad==="down"&&wd==="up"){text=`Waist down while weight climbs. Lean gain / recomposition.`;tone=C.go;}
-    else if(wd==="down"&&armd==="down"){text=`Weight down ${w.toFixed(2)} lb/wk but arms shrinking. Watch protein and training to hold muscle.`;tone=C.warn;}
     else if(wd==="down"){text=`Weight down ${w.toFixed(2)} lb/wk, waist flat. Mostly on track; watch composition.`;tone=C.go;}
     else if(wd==="up"){text=`Weight up ${w.toFixed(2)} lb/wk, waist flat. Surplus; lean if intended, watch if not.`;tone=C.warn;}
     else{text=`Body metrics roughly flat. Hold or adjust the lever you want to move.`;tone=C.dim;}
@@ -878,16 +876,10 @@ export default function App(){
           <input className="in sm" type="number" inputMode="decimal" placeholder={'waist"'} value={bWa} onChange={e=>setBWa(e.target.value)} style={{flex:1}}/>
           <input className="in sm" type="number" inputMode="decimal" placeholder={'navel"'} value={bNa} onChange={e=>setBNa(e.target.value)} style={{flex:1}}/>
         </div>
-        <div className="grid4">
-          <input className="in sm" type="number" inputMode="decimal" placeholder="L arm" value={bLA} onChange={e=>setBLA(e.target.value)} style={{flex:1}}/>
-          <input className="in sm" type="number" inputMode="decimal" placeholder="R arm" value={bRA} onChange={e=>setBRA(e.target.value)} style={{flex:1}}/>
-          <input className="in sm" type="number" inputMode="decimal" placeholder="L thigh" value={bLT} onChange={e=>setBLT(e.target.value)} style={{flex:1}}/>
-          <input className="in sm" type="number" inputMode="decimal" placeholder="R thigh" value={bRT} onChange={e=>setBRT(e.target.value)} style={{flex:1}}/>
-        </div>
         <button className="btn btn-go" style={{width:"100%",height:44,fontSize:13}} onClick={addBody}>Log measurements</button>
         {bodyData.length>0&&<div style={{marginTop:8}}>
           {bodyData.slice(-5).reverse().map((e,i)=><div key={i} className="entry">
-            <span>{e.date} · {e.weight&&`${e.weight}lb `}{e.waist&&`W${e.waist} `}{e.navel&&`N${e.navel} `}{e.lArm&&`LA${e.lArm} `}{e.rArm&&`RA${e.rArm} `}{e.lThigh&&`LT${e.lThigh} `}{e.rThigh&&`RT${e.rThigh}`}</span>
+            <span>{e.date} · {e.weight&&`${e.weight}lb `}{e.waist&&`W${e.waist} `}{e.navel&&`N${e.navel} `}</span>
             <button className="x" onClick={()=>delBody(e.time||e.date)}>✕</button>
           </div>)}
         </div>}
@@ -1050,7 +1042,7 @@ export default function App(){
       {bodyData.length===0?<div className="empty">No measurements yet</div>:
         <div className="card">
           {bodyData.slice(-10).reverse().map((e,i)=><div key={i} className="entry">
-            <span>{e.date} · {e.weight&&`${e.weight}lb `}{e.waist&&`W${e.waist} `}{e.navel&&`N${e.navel} `}{e.lArm&&`LA${e.lArm} `}{e.rArm&&`RA${e.rArm} `}{e.lThigh&&`LT${e.lThigh} `}{e.rThigh&&`RT${e.rThigh}`}</span>
+            <span>{e.date} · {e.weight&&`${e.weight}lb `}{e.waist&&`W${e.waist} `}{e.navel&&`N${e.navel} `}</span>
           </div>)}
         </div>}
       {(()=>{const wd=bodyData.filter(e=>e.weight).map(e=>({date:e.date,w:+e.weight}));
@@ -1066,7 +1058,7 @@ export default function App(){
           </div>
           <div className="stat"><span><b style={{color:C.bone}}>{wd[wd.length-1].w}lb</b> · <span style={{color:perWk<=0?C.go:C.alarm}}>{perWk>0?"+":""}{perWk.toFixed(2)} lb/wk</span> · {wd.length} weigh-ins</span></div>
         </div>;})()}
-      {(()=>{const fields=[["waist","Waist",true],["navel","Navel",true],["lArm","L arm",false],["rArm","R arm",false],["lThigh","L thigh",false],["rThigh","R thigh",false]];
+      {(()=>{const fields=[["waist","Waist",true],["navel","Navel",true]];
         const rows=fields.map(([k,label,downGood])=>{const pts=bodyData.filter(e=>e[k]).map(e=>({x:new Date(String(e.date).slice(0,10)+"T00:00:00").getTime()/86400000,y:+e[k]}));if(pts.length<2)return null;const perWk=slope(pts)*7;const good=downGood?perWk<=0:perWk>=0;return{label,perWk,good};}).filter(Boolean);
         if(!rows.length)return null;
         return<div className="delta-box"><div style={{fontFamily:mono,fontSize:11,color:C.dim,marginBottom:4}}>SLOPE /wk</div>{rows.map((r,i)=><div key={i}>{r.label} <span style={{color:r.good?C.go:C.alarm}}>{r.perWk>0?"+":""}{r.perWk.toFixed(2)}"</span></div>)}</div>;})()}
@@ -1075,8 +1067,6 @@ export default function App(){
           {f.weight&&l.weight?<div>Weight {f.weight} → {l.weight} <span style={{color:l.weight<f.weight?C.go:C.alarm}}>({l.weight>f.weight?"+":""}{(l.weight-f.weight).toFixed(1)})</span></div>:null}
           {f.waist&&l.waist?<div>Waist {f.waist}" → {l.waist}" <span style={{color:l.waist<f.waist?C.go:C.alarm}}>({l.waist>f.waist?"+":""}{(l.waist-f.waist).toFixed(1)})</span></div>:null}
           {f.navel&&l.navel?<div>Navel {f.navel}" → {l.navel}" <span style={{color:l.navel<f.navel?C.go:C.alarm}}>({l.navel>f.navel?"+":""}{(l.navel-f.navel).toFixed(1)})</span></div>:null}
-          {f.lArm&&l.lArm?<div>L arm {f.lArm}" → {l.lArm}" <span style={{color:l.lArm>f.lArm?C.go:C.alarm}}>({l.lArm>f.lArm?"+":""}{(l.lArm-f.lArm).toFixed(1)})</span></div>:null}
-          {f.lThigh&&l.lThigh?<div>L thigh {f.lThigh}" → {l.lThigh}" <span style={{color:l.lThigh>f.lThigh?C.go:C.alarm}}>({l.lThigh>f.lThigh?"+":""}{(l.lThigh-f.lThigh).toFixed(1)})</span></div>:null}
         </div>;})()}
 
       <div className="eyebrow"><span style={{color:C.amber}}>Cardio</span></div>
