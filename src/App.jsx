@@ -530,6 +530,7 @@ export default function App(){
   const[cardioData,setCardioData]=useState(()=>ld(SK.cardio,[]));
   const[meso,setMeso]=useState(()=>ld(SK.meso,{startDate:null,length:5}));
   const[sessHist,setSessHist]=useState(()=>ld(SK.history,[]));
+  const[editDur,setEditDur]=useState(null);const[editDurVal,setEditDurVal]=useState("");
   const[metGoal,setMetGoal]=useState(()=>ld(SK.metgoal,40));
   const[eccEnabled,setEccEnabled]=useState(()=>ld(SK.eccentrix,true));
   const[setup,setSetup]=useState(false);
@@ -636,6 +637,7 @@ export default function App(){
   },[anchorLog,anchors,anchorSets,accs,accLog,fatigue,meso,initSession,sessionStart,sessionMode,sessHist]);
 
   const delHistEntry=useCallback(date=>{const all=sessHist.filter(x=>x.date!==date);setSessHist(all);sv(SK.history,all);},[sessHist]);
+  const saveDur=useCallback(()=>{const all=sessHist.map(x=>x.date===editDur?{...x,durationMin:+editDurVal||null}:x);setSessHist(all);sv(SK.history,all);setEditDur(null);setEditDurVal("");},[sessHist,editDur,editDurVal]);
   const selAnchor=useCallback((pid,name)=>setAnchors(p=>{const n={...p,[pid]:name};sv(SK.anchors,n);return n;}),[]);
   const startDeload=useCallback(()=>{const nm={startDate:new Date().toISOString(),length:1};setMeso(nm);sv(SK.meso,nm);},[]);
   const newMeso=useCallback(()=>{const nm={startDate:new Date().toISOString(),length:5};setMeso(nm);sv(SK.meso,nm);initSession();},[initSession]);
@@ -958,8 +960,15 @@ export default function App(){
         const avg=durations.length?Math.round(durations.reduce((a,b)=>a+b,0)/durations.length):0;
         return<div className="card">
           {avg>0&&<div className="sub" style={{marginBottom:6,marginTop:0}}>Avg {avg} min · {hist.filter(h=>h.mode==="full").length} full · {hist.filter(h=>h.mode==="quick").length} quick</div>}
-          {hist.map((h,i)=><div key={i} className="entry">
+          {hist.map((h,i)=>editDur===h.date?
+            <div key={i} className="entry" style={{gap:6}}>
+              <input className="in sm" type="number" inputMode="numeric" placeholder="min" value={editDurVal} onChange={e=>setEditDurVal(e.target.value)} style={{flex:1}} autoFocus/>
+              <button className="x" onClick={saveDur} style={{color:C.go,borderColor:C.go,fontFamily:mono,fontSize:11}}>save</button>
+              <button className="x" onClick={()=>{setEditDur(null);setEditDurVal("");}} style={{fontFamily:mono,fontSize:11}}>cancel</button>
+            </div>
+            :<div key={i} className="entry">
             <span>{new Date(h.date).toLocaleDateString("en-US",{month:"short",day:"numeric"})} · {h.mode==="quick"?"Quick":"Full"} {h.durationMin?`· ${h.durationMin}min`:""} · {Object.values(h.anchors||{}).filter(a=>a.sets?.some(s=>s.reps)).length} anchors</span>
+            <button className="x" onClick={()=>{setEditDur(h.date);setEditDurVal(String(h.durationMin||""));}} style={{fontFamily:mono,fontSize:11}}>edit</button>
             <button className="x" onClick={()=>delHistEntry(h.date)}>✕</button>
           </div>)}
         </div>;
