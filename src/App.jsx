@@ -296,11 +296,11 @@ function powerProg(name,log){
 }
 function getProgression(name,log,repRange=[6,10],targetRIR=2,bodyWeight=0,powerMode=false){
   const h=log[name];
+  const exDef=EXERCISES.find(x=>x.name===name);
+  if(powerMode&&!(exDef&&exDef.bw))return powerProg(name,log);   // loaded power routes first (handles first session internally)
   if(!h||!h.length)return{weight:"",reps:repRange[0],sets:3,note:`First session. Find weight for ${repRange[0]} reps @ RIR ${targetRIR}.`,isNew:true};
   const last=h[h.length-1];
-  const exDef=EXERCISES.find(x=>x.name===name);
   if(exDef&&exDef.bw)return bwProgression(exDef,last,repRange,targetRIR,bodyWeight);
-  if(powerMode&&!(exDef&&exDef.bw))return powerProg(name,log);
   const ls=last.sets.filter(s=>s.reps&&s.weight);
   if(!ls.length)return{weight:"",reps:repRange[0],sets:3,note:"No data last session.",isNew:true,ramp:null};
   // ── PROGRESSION MODEL C: weighted e1RM across ALL sets ──
@@ -697,7 +697,7 @@ export default function App(){
     setAccs(genAcc(accCount,banned,prefs,fatigue,weekVol,anchorMuscleLoad(anchors,sets),recentNames,accRange,[],isDeload));
   },[anchors,anchorLog,accCount,banned,prefs,fatigue,weekVol,mesoState.phase,latestBW,accLog,eccEnabled,powerEnabled]);
 
-  useEffect(()=>{if(allSet&&!setup)initSession();},[allSet,setup]);
+  useEffect(()=>{if(allSet&&!setup)initSession();},[allSet,setup,powerEnabled,eccEnabled]);
 
   const updAS=useCallback((pid,idx,f,v)=>setAnchorSets(p=>({...p,[pid]:p[pid].map((s,i)=>i===idx?{...s,[f]:v}:s)})),[]);
   const rmAS=useCallback((pid,idx)=>setAnchorSets(p=>({...p,[pid]:p[pid].filter((_,i)=>i!==idx)})),[]);
