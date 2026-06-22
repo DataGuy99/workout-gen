@@ -669,7 +669,10 @@ export default function App(){
       if(!anchors[p.id])return;
       const prog=getProgression(anchors[p.id],anchorLog,[6,10],2,latestBW,powerEnabled);
       const n=setTarget(anchors[p.id],anchorLog,[6,10],2,mesoState.phase);
-      const w=isDeload&&prog.weight?Math.round(+prog.weight*0.7):prog.weight;
+      const ex0=EXERCISES.find(x=>x.name===anchors[p.id])||{};
+      let baseW=prog.weight;
+      if((baseW===""||baseW==null)&&!ex0.bw&&prog.isNew){const seed=muscleSeedWeight(((ex0.p&&ex0.p[0])||{}).m,{...ld(SK.accLog+"_prog",{}),...anchorLog});if(seed)baseW=seed;}
+      const w=isDeload&&baseW?Math.round(+baseW*0.7):baseW;
       // ── LIVE: flat prescription (every set same weight) ──
       sets[p.id]=Array.from({length:n},()=>({reps:prog.reps||"",weight:w||"",rir:"",pain:"",...(prog.eccTarget?{ecc:prog.eccTarget}:{}),...(prog.power?{pwr:1}:{})}));
       // ── DORMANT: ramp/progressive pre-fill. Marker: RAMP_PREFILL ──
@@ -949,7 +952,7 @@ export default function App(){
                 {addedSet&&<span className="chip" style={{color:C.go,background:`${C.go}1c`,border:`1px solid ${C.go}44`}}>+1 SET → {tgtN}</span>}
                 <p>{prog.note}{prog.weight?<span className="tgt"> → {prog.reps}r × {prog.weight}lb</span>:null}</p>
               </div>
-              {sets.map((s,i)=><SetRow key={i} set={s} i={i} showPain={true} isHold={!!(EXERCISES.find(x=>x.name===anchors[p.id])||{}).hold} showEcc={(()=>{const e=EXERCISES.find(x=>x.name===anchors[p.id])||{};return !!e.bw&&!e.hold&&eccEnabled;})()} showPwr={(()=>{const e=EXERCISES.find(x=>x.name===anchors[p.id])||{};return powerEnabled&&!e.hold;})()} win={prog.win||POWER_WINDOW}
+              {sets.map((s,i)=><SetRow key={i} set={s} i={i} showPain={p.id==="squat"||p.id==="hinge"} isHold={!!(EXERCISES.find(x=>x.name===anchors[p.id])||{}).hold} showEcc={(()=>{const e=EXERCISES.find(x=>x.name===anchors[p.id])||{};return !!e.bw&&!e.hold&&eccEnabled;})()} showPwr={(()=>{const e=EXERCISES.find(x=>x.name===anchors[p.id])||{};return powerEnabled&&!e.hold;})()} win={prog.win||POWER_WINDOW}
                 onUp={(idx,f,v)=>updAS(p.id,idx,f,v)} onRm={idx=>rmAS(p.id,idx)}/>)}
               <button className="addset" onClick={()=>addAS(p.id)}>+ set</button>
             </div>);
@@ -1180,22 +1183,6 @@ export default function App(){
           </div>
         </div>);
       })}
-
-      <div className="eyebrow"><span style={{color:C.go}}>Strength index</span></div>
-      {(()=>{const bwAt=date=>{const wd=bodyData.filter(e=>e.weight);if(!wd.length)return 0;let best=wd[0];for(const e of wd){if(e.date<=date)best=e;else break;}return +best.weight||0;};
-        const metricFor=(ex,e)=>{if(ex?.bw){const ss=e.sets.filter(s=>s.reps);return ss.length?ss.reduce((a,s)=>a+(+s.reps),0)/ss.length:0;}const b=e.sets.filter(s=>s.weight&&s.reps).sort((a,b)=>(b.weight*b.reps)-(a.weight*a.reps))[0];return b?b.weight*(1+b.reps/30):0;};
-        const idxByWeek={};
-        PATTERNS.forEach(p=>{const nm=anchors[p.id];if(!nm)return;const h=anchorLog[nm];if(!h||!h.length)return;const ex=EXERCISES.find(x=>x.name===nm);
-          const series=h.map(e=>({w:weekStart(e.date),v:metricFor(ex,e)})).filter(x=>x.v>0);if(!series.length)return;const base=series[0].v;
-          const perWeek={};series.forEach(x=>{perWeek[x.w]=x.v;});
-          Object.entries(perWeek).forEach(([w,v])=>{if(!idxByWeek[w])idxByWeek[w]={s:0,c:0};idxByWeek[w].s+=v/base;idxByWeek[w].c++;});});
-        const weeks=Object.keys(idxByWeek).sort().slice(-10);if(weeks.length<1)return<div className="empty">No anchor data yet</div>;
-        const idx=weeks.map(w=>Math.round((idxByWeek[w].s/idxByWeek[w].c)*100));const mn=Math.min(...idx,100),mx=Math.max(...idx,100),rng=mx-mn||1;const cur=idx[idx.length-1];
-        return<div className="card plate">
-          <div className="sub" style={{marginTop:0,marginBottom:6}}>Avg of trained anchors vs their baseline (100)</div>
-          <div className="bars">{idx.map((v,i)=><div key={i} className="bar" style={{height:`${Math.max(((v-mn)/rng)*100,8)}%`,background:i===idx.length-1?C.go:`${C.go}55`}}/>)}</div>
-          <div className="stat"><span><b style={{color:C.bone}}>{cur}</b> index · <span style={{color:cur>=100?C.go:C.alarm}}>{cur>100?"+":""}{cur-100}%</span> vs start</span></div>
-        </div>;})()}
 
       <div className="eyebrow"><span style={{color:C.arc}}>Weekly tonnage</span></div>
       {(()=>{const bwAt=date=>{const wd=bodyData.filter(e=>e.weight);if(!wd.length)return 0;let best=wd[0];for(const e of wd){if(e.date<=date)best=e;else break;}return +best.weight||0;};
