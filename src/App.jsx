@@ -912,7 +912,7 @@ export default function App(){
                 <span className="chip" style={{color:chip.c,background:`${chip.c}1c`,border:`1px solid ${chip.c}44`}}>{chip.t}</span>
                 <p>{prog.note}{prog.weight?<span className="tgt"> → {prog.reps}r × {prog.weight}lb</span>:null}</p>
               </div>
-              {sets.map((s,i)=><SetRow key={i} set={s} i={i} showPain={true} isHold={!!(EXERCISES.find(x=>x.name===anchors[p.id])||{}).hold} showEcc={(()=>{const e=EXERCISES.find(x=>x.name===anchors[p.id])||{};return !!e.bw&&!e.hold&&eccEnabled;})()} showPwr={(()=>{const e=EXERCISES.find(x=>x.name===anchors[p.id])||{};return powerEnabled&&!e.bw&&!e.hold;})()} win={prog.win||POWER_WINDOW}
+              {sets.map((s,i)=><SetRow key={i} set={s} i={i} showPain={true} isHold={!!(EXERCISES.find(x=>x.name===anchors[p.id])||{}).hold} showEcc={(()=>{const e=EXERCISES.find(x=>x.name===anchors[p.id])||{};return !!e.bw&&!e.hold&&eccEnabled;})()} showPwr={(()=>{const e=EXERCISES.find(x=>x.name===anchors[p.id])||{};return powerEnabled&&!e.hold;})()} win={prog.win||POWER_WINDOW}
                 onUp={(idx,f,v)=>updAS(p.id,idx,f,v)} onRm={idx=>rmAS(p.id,idx)}/>)}
               <button className="addset" onClick={()=>addAS(p.id)}>+ set</button>
             </div>);
@@ -943,7 +943,7 @@ export default function App(){
               </div>
             </div>
             <div style={{marginTop:4}}>
-              {a.sets.map((s,i)=><SetRow key={i} set={s} i={i} showPain={false} isHold={!!(EXERCISES.find(x=>x.name===a.name)||{}).hold} showEcc={(()=>{const e=EXERCISES.find(x=>x.name===a.name)||{};return !!e.bw&&!e.hold&&eccEnabled;})()} showPwr={(()=>{const e=EXERCISES.find(x=>x.name===a.name)||{};return powerEnabled&&!e.bw&&!e.hold;})()}
+              {a.sets.map((s,i)=><SetRow key={i} set={s} i={i} showPain={false} isHold={!!(EXERCISES.find(x=>x.name===a.name)||{}).hold} showEcc={(()=>{const e=EXERCISES.find(x=>x.name===a.name)||{};return !!e.bw&&!e.hold&&eccEnabled;})()} showPwr={(()=>{const e=EXERCISES.find(x=>x.name===a.name)||{};return powerEnabled&&!e.hold;})()}
                 onUp={(idx,f,v)=>updAcc(a.id,idx,f,v)} onRm={idx=>rmAcc(a.id,idx)}/>)}
             </div>
             <button className="addset" onClick={()=>addAccSet(a.id)}>+ set</button>
