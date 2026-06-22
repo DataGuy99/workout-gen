@@ -156,6 +156,15 @@ function bodyTrend(entries,key){
   if(Shh<n||Math.abs(det)<1e-9)return plain();                 // no real time spread or collinear -> plain slope
   return ((Sdy*Shh-Shy*Sdh)/det)*7;                            // day slope, controlling for time of day
 }
+
+// Formats the optional cardio metrics (distance, rowing 500m split, zone minutes) for display.
+function cardioExtra(e){
+  let s="";
+  if(e.distance){s+=` · ${e.distance}m`;
+    if(e.type==="rowing"&&e.duration){const sp=Math.round(e.duration*60/(e.distance/500));s+=` · ${Math.floor(sp/60)}:${String(sp%60).padStart(2,"0")}/500m`;}}
+  if(e.zones&&e.zones.some(z=>z>0))s+=` · Z ${e.zones.join("/")}`;
+  return s;
+}
 // Pearson r of [[x,y],...]; null if <3 pairs or zero variance.
 function pearson(pairs){const n=pairs.length;if(n<3)return null;const sx=pairs.reduce((a,p)=>a+p[0],0),sy=pairs.reduce((a,p)=>a+p[1],0),sxy=pairs.reduce((a,p)=>a+p[0]*p[1],0),sxx=pairs.reduce((a,p)=>a+p[0]*p[0],0),syy=pairs.reduce((a,p)=>a+p[1]*p[1],0);const num=n*sxy-sx*sy,den=Math.sqrt((n*sxx-sx*sx)*(n*syy-sy*sy));return den===0?null:num/den;}
 
@@ -195,7 +204,7 @@ const RIR_PROGRESS=3;
 // unavailable (no HR/weight), fall back to type METs x hours. Resistance has no kcal log,
 // so it always uses a MET value x duration. All tunable.
 const RESIST_MET=5;                                    // vigorous resistance training
-const CARDIO_MET={steady:7,hiit:9};                    // fallback when kcal/kg unavailable
+const CARDIO_MET={steady:7,hiit:9,rowing:7};                    // fallback when kcal/kg unavailable
 // ── BODYWEIGHT PROGRESSION ──
 // For bw-tagged exercises: load is fixed (bodyweight + any added), progress by
 // reps (or seconds for holds). Reads sets by reps only, never the weight filter.
@@ -645,12 +654,12 @@ export default function App(){
     setBW("");setBWa("");setBNa("");},[bW,bWa,bNa,today]);
   const delBody=useCallback(time=>{setBodyData(p=>{const n=p.filter(e=>e.time!==time);sv(SK.body,n);return n;});},[]);
   // Cardio
-  const[cType,setCType]=useState("steady");const[cDur,setCDur]=useState("");const[cHR,setCHR]=useState("");const[cConf,setCConf]=useState("");
+  const[cType,setCType]=useState("steady");const[cDur,setCDur]=useState("");const[cHR,setCHR]=useState("");const[cConf,setCConf]=useState("");const[cDist,setCDist]=useState("");const[cZones,setCZones]=useState(["","","","",""]);
   const[profile,setProfile]=useState(()=>ld(SK.profile,{age:26,sex:"male"}));
   const setProf=(f,v)=>setProfile(p=>{const n={...p,[f]:f==="age"?(+v||0):v};sv(SK.profile,n);return n;});
-  const addCardio=useCallback(()=>{if(!cDur)return;const e={date:today,type:cType,duration:+cDur,avgHR:+cHR||null,config:cType==="hiit"?cConf:"",time:new Date().toISOString()};
+  const addCardio=useCallback(()=>{if(!cDur)return;const e={date:today,type:cType,duration:+cDur,avgHR:+cHR||null,config:cType==="hiit"?cConf:"",...(+cDist?{distance:+cDist}:{}),...(cZones.some(z=>+z>0)?{zones:cZones.map(z=>+z||0)}:{}),time:new Date().toISOString()};
     e.burn=cardioBurn(e,latestBW,profile.age,profile.sex);
-    setCardioData(p=>{const n=[...p,e].slice(-500);sv(SK.cardio,n);return n;});setCDur("");setCHR("");setCConf("");},[cType,cDur,cHR,cConf,today,latestBW,profile.age,profile.sex]);
+    setCardioData(p=>{const n=[...p,e].slice(-500);sv(SK.cardio,n);return n;});setCDur("");setCHR("");setCConf("");setCDist("");setCZones(["","","","",""]);},[cType,cDur,cHR,cConf,cDist,cZones,today,latestBW,profile.age,profile.sex]);
   const delCardio=useCallback(time=>{setCardioData(p=>{const n=p.filter(e=>e.time!==time);sv(SK.cardio,n);return n;});},[]);
   const clearAllData=useCallback(()=>{if(!confirm("Delete ALL data? This cannot be undone."))return;
     Object.values(SK).forEach(k=>localStorage.removeItem(k));localStorage.removeItem(SK.accLog+"_prog");
@@ -915,10 +924,15 @@ export default function App(){
         </div>
         <div className="grid3">
           <select className="in sm" value={cType} onChange={e=>setCType(e.target.value)} style={{width:96,flexShrink:0}}>
-            <option value="steady">Steady</option><option value="hiit">HIIT</option>
+            <option value="steady">Steady</option><option value="hiit">HIIT</option><option value="rowing">Rowing</option>
           </select>
           <input className="in sm" type="number" inputMode="numeric" placeholder="min" value={cDur} onChange={e=>setCDur(e.target.value)} style={{flex:1}}/>
           <input className="in sm" type="number" inputMode="numeric" placeholder="avg HR" value={cHR} onChange={e=>setCHR(e.target.value)} style={{flex:1}}/>
+        </div>
+        <input className="in sm" type="number" inputMode="decimal" placeholder="distance (m)" value={cDist} onChange={e=>setCDist(e.target.value)} style={{width:"100%",marginBottom:6}}/>
+        <div style={{display:"flex",gap:5,alignItems:"center",marginBottom:6}}>
+          <span style={{fontFamily:mono,fontSize:10,color:C.dim,flexShrink:0}}>min in Z</span>
+          {[0,1,2,3,4].map(i=><input key={i} className="in sm" type="number" inputMode="numeric" placeholder={`Z${i+1}`} value={cZones[i]} onChange={e=>setCZones(z=>z.map((v,j)=>j===i?e.target.value:v))} style={{flex:1,minWidth:0,textAlign:"center"}}/>)}
         </div>
         {cType==="hiit"&&<input className="in sm" type="text" placeholder="config · 4x4min @175bpm" value={cConf} onChange={e=>setCConf(e.target.value)} style={{width:"100%",marginBottom:6}}/>}
         {cDur&&cHR&&(()=>{const b=cardioBurn({avgHR:cHR,duration:cDur,type:cType},latestBW,profile.age,profile.sex);
@@ -926,7 +940,7 @@ export default function App(){
         <button className="btn btn-go" style={{width:"100%",height:44,fontSize:13}} onClick={addCardio}>Log cardio</button>
         {cardioData.length>0&&<div style={{marginTop:8}}>
           {cardioData.slice(-5).reverse().map((e,i)=><div key={i} className="entry">
-            <span>{e.date} · {e.type} {e.duration}min {e.avgHR&&`· HR ${e.avgHR}`}{(()=>{const b=e.burn!=null?e.burn:cardioBurn(e,latestBW,profile.age,profile.sex);return b?` · ~${b} cal`:"";})()} {e.config&&<span style={{color:C.dim}}>({e.config})</span>}</span>
+            <span>{e.date} · {e.type} {e.duration}min {e.avgHR&&`· HR ${e.avgHR}`}{(()=>{const b=e.burn!=null?e.burn:cardioBurn(e,latestBW,profile.age,profile.sex);return b?` · ~${b} cal`:"";})()}{cardioExtra(e)} {e.config&&<span style={{color:C.dim}}>({e.config})</span>}</span>
             <button className="x" onClick={()=>delCardio(e.time||e.date)}>✕</button>
           </div>)}
         </div>}
@@ -1084,7 +1098,7 @@ export default function App(){
       {cardioData.length===0?<div className="empty">No cardio yet</div>:
         <div className="card">
           {cardioData.slice(-10).reverse().map((e,i)=><div key={i} className="entry">
-            <span>{e.date} · {e.type} {e.duration}min {e.avgHR&&`· HR ${e.avgHR}`}{(()=>{const b=e.burn!=null?e.burn:cardioBurn(e,latestBW,profile.age,profile.sex);return b?` · ~${b} cal`:"";})()} {e.config&&<span style={{color:C.dim}}>({e.config})</span>}</span>
+            <span>{e.date} · {e.type} {e.duration}min {e.avgHR&&`· HR ${e.avgHR}`}{(()=>{const b=e.burn!=null?e.burn:cardioBurn(e,latestBW,profile.age,profile.sex);return b?` · ~${b} cal`:"";})()}{cardioExtra(e)} {e.config&&<span style={{color:C.dim}}>({e.config})</span>}</span>
           </div>)}
         </div>}
 
