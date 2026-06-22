@@ -132,6 +132,7 @@ const PATTERN_MAP={
 };
 const ALL_PAT_EX=new Set(Object.values(PATTERN_MAP).flat());
 const ACC_POOL=EXERCISES.filter(e=>!ALL_PAT_EX.has(e.name));
+const ACC_PER_CAT=4;   // top-N accessories per movement category in the pick window (cross-pattern variety)
 
 // Monday-anchored week key (YYYY-MM-DD of that week's Monday); sortable.
 function weekStart(dstr){const ds=String(dstr).slice(0,10);const d=new Date(ds+"T00:00:00");const off=(d.getDay()+6)%7;d.setDate(d.getDate()-off);return d.toISOString().slice(0,10);}
@@ -397,6 +398,18 @@ function muscleSeedWeight(primaryMuscle,accProg){
   return weights[Math.floor(weights.length/2)];
 }
 
+// Build one accessory object (prescription + seeded weight) for a given exercise.
+// Shared by the auto-selector (genAcc) and manual search-add so both behave identically.
+function buildAcc(ex,accProg,repRange,bwLoad,isDeload,locked=false){
+  const sug=getProgression(ex.name,accProg,repRange,2,bwLoad);
+  let sw=sug.weight||"";
+  if(sw===""&&!ex.bw&&sug.isNew){const seed=muscleSeedWeight((ex.p[0]||{}).m,accProg);if(seed)sw=seed;}
+  if(isDeload&&sw)sw=Math.round(+sw*0.7);
+  const nSets=isDeload?1:2;
+  return{id:crypto.randomUUID(),name:ex.name,eq:ex.eq,cat:ex.cat,p:ex.p,s:ex.s,
+    sugReps:sug.reps||10,sugWeight:sw,locked,
+    sets:Array.from({length:nSets},()=>({reps:sug.reps||"",weight:sw||"",rir:"",...(sug.eccTarget?{ecc:sug.eccTarget}:{})}))};
+}
 function genAcc(n,banned,prefs,fatigue,weekVol,anchorLoad,recentNames=[],repRange=[10,15],exclude=[],isDeload=false){
   const pool=ACC_POOL.filter(e=>!banned.includes(e.name));
   const cap=m=>VOL_LANDMARKS[m]?.mav||12;                 // per-session target ceiling
@@ -411,25 +424,18 @@ function genAcc(n,banned,prefs,fatigue,weekVol,anchorLoad,recentNames=[],repRang
     const scored=pool.filter(e=>!used.has(e.name)).map(ex=>{
       const stars=prefs[ex.name]||0;const mult=stars===0?1:stars===1?1.3:stars===2?1.6:2.0;
       const allM=[...ex.p,...ex.s];let fit=0,wsum=0;
-      allM.forEach(({m,p:pct})=>{const w=pct/100;const head=Math.max(0,cap(m)-(load[m]||0));const frac=head/(cap(m)||1);fit+=frac*w*fw[m];wsum+=w;});
+      allM.forEach(({m,p:pct})=>{const w=pct/100;const head=Math.max(0,cap(m)-(load[m]||0));const frac=0.5+0.5*(head/(cap(m)||1));fit+=frac*w*fw[m];wsum+=w;});
       fit=wsum?fit/wsum:0;
       const underBoost=allM.some(({m})=>weekVol[m]<(VOL_LANDMARKS[m]?.mev||6))?1.3:1;
       const recencyPen=recentNames.includes(ex.name)?(0.3+(stars/3)*0.7):1;  // recent picks cycle out; stars protect favorites (3 stars = no penalty)
       return{ex,allM,score:mult*fit*underBoost*recencyPen};
     }).filter(x=>x.score>0.001).sort((a,b)=>b.score-a.score);
     if(!scored.length)break;                               // nothing left with headroom: round-up complete
-    const top=scored.slice(0,Math.min(6,scored.length));   // weighted-random among top for variety
+    const byCat={};scored.forEach(x=>{const c=(x.ex.cat)||"other";(byCat[c]=byCat[c]||[]).push(x);});const top=Object.values(byCat).flatMap(arr=>arr.slice(0,ACC_PER_CAT));   // top-N per category, then weighted-random -> variety across push/pull/legs/core
     const tot=top.reduce((s,x)=>s+x.score,0);let r=Math.random()*tot,pick=top[0];
     for(const c of top){r-=c.score;if(r<=0){pick=c;break;}}
     pick.allM.forEach(({m,p:pct})=>{load[m]=(load[m]||0)+ACC_SETS*(pct/100);}); // add this pick's load
-    const sug=getProgression(pick.ex.name,accProg,repRange,2,bwLoad);
-    let sw=sug.weight||"";
-    if(sw===""&&!pick.ex.bw&&sug.isNew){const seed=muscleSeedWeight((pick.ex.p[0]||{}).m,accProg);if(seed)sw=seed;} // new accessory: seed from same-muscle history
-    if(isDeload&&sw)sw=Math.round(+sw*0.7);                 // deload coherence: lighter with anchors
-    const nSets=isDeload?1:2;
-    sel.push({id:crypto.randomUUID(),name:pick.ex.name,eq:pick.ex.eq,cat:pick.ex.cat,p:pick.ex.p,s:pick.ex.s,
-      sugReps:sug.reps||10,sugWeight:sw,locked:false,
-      sets:Array.from({length:nSets},()=>({reps:sug.reps||"",weight:sw||"",rir:"",...(sug.eccTarget?{ecc:sug.eccTarget}:{})}))});
+    sel.push(buildAcc(pick.ex,accProg,repRange,bwLoad,isDeload,false));
     used.add(pick.ex.name);
   }
   return sel;
@@ -584,6 +590,7 @@ export default function App(){
   const[logDate,setLogDate]=useState(()=>new Date().toISOString().slice(0,10));
   const[showTgtEd,setShowTgtEd]=useState(false);
   const[accCount]=useState(3);
+  const[accSearch,setAccSearch]=useState("");
   const[sessionStart,setSessionStart]=useState(null);
   const[sessionMode,setSessionMode]=useState("full");
   const[quickExs,setQuickExs]=useState([]);
@@ -623,7 +630,7 @@ export default function App(){
       // }
     });
     setAnchorSets(sets);
-    const recentNames=[...new Set((accLog||[]).slice(-2).flatMap(e=>(e.exercises||[]).map(x=>x.name)))];
+    const recentNames=[...new Set((accLog||[]).slice(-3).flatMap(e=>(e.exercises||[]).map(x=>x.name)))];
     const accRange=[[8,12],[12,15],[15,20]][((accLog&&accLog.length)||0)%3];
     setAccs(genAcc(accCount,banned,prefs,fatigue,weekVol,anchorMuscleLoad(anchors,sets),recentNames,accRange,[],isDeload));
   },[anchors,anchorLog,accCount,banned,prefs,fatigue,weekVol,mesoState.phase,latestBW,accLog,eccEnabled,powerEnabled]);
@@ -641,9 +648,26 @@ export default function App(){
   const rerollAcc=useCallback(()=>{const locked=accs.filter(a=>a.locked);const isDeload=mesoState.phase==="deload";
     const seed=anchorMuscleLoad(anchors,anchorSets);
     locked.forEach(a=>[...a.p,...a.s].forEach(({m,p:pct})=>{seed[m]=(seed[m]||0)+(a.sets.length)*(pct/100);}));
-    const recentNames=[...new Set((accLog||[]).slice(-2).flatMap(e=>(e.exercises||[]).map(x=>x.name)))];
+    const recentNames=[...new Set((accLog||[]).slice(-3).flatMap(e=>(e.exercises||[]).map(x=>x.name)))];
     const accRange=[[8,12],[12,15],[15,20]][((accLog&&accLog.length)||0)%3];
     const newAccs=genAcc(accCount-locked.length,banned,prefs,fatigue,weekVol,seed,recentNames,accRange,locked.map(a=>a.name),isDeload);setAccs([...locked,...newAccs]);},[accs,accCount,banned,prefs,fatigue,weekVol,anchors,anchorSets,accLog,mesoState.phase,eccEnabled]);
+  const addAccByName=useCallback((name)=>{
+    const ex=EXERCISES.find(x=>x.name===name);if(!ex)return;
+    const isDeload=mesoState.phase==="deload";
+    const accProg=ld(SK.accLog+"_prog",{});
+    const accRange=[[8,12],[12,15],[15,20]][((accLog&&accLog.length)||0)%3];
+    setAccs(prev=>{
+      const locked=prev.filter(a=>a.locked);
+      if(locked.some(a=>a.name===name))return prev;
+      const newLocked=[...locked,buildAcc(ex,accProg,accRange,latestBW,isDeload,true)];
+      const seed=anchorMuscleLoad(anchors,anchorSets);
+      newLocked.forEach(a=>[...a.p,...a.s].forEach(({m,p:pct})=>{seed[m]=(seed[m]||0)+(a.sets.length)*(pct/100);}));
+      const recentNames=[...new Set((accLog||[]).slice(-3).flatMap(e=>(e.exercises||[]).map(x=>x.name)))];
+      const fill=genAcc(Math.max(0,accCount-newLocked.length),banned,prefs,fatigue,weekVol,seed,recentNames,accRange,newLocked.map(a=>a.name),isDeload);
+      return[...newLocked,...fill];
+    });
+    setAccSearch("");
+  },[accCount,banned,prefs,fatigue,weekVol,anchors,anchorSets,accLog,mesoState.phase,latestBW]);
 
   const saveSession=useCallback(()=>{
     const newAL={...anchorLog};
@@ -873,6 +897,13 @@ export default function App(){
           <div className="eyebrow">
             <span style={{color:C.amber}}>Accessories</span>
             <button className="btn-ghost act" onClick={rerollAcc}>Reroll</button>
+          </div>
+          <div style={{marginBottom:10}}>
+            <div style={{display:"flex",gap:6,alignItems:"center"}}>
+              <input className="in" placeholder="search to add an accessory (e.g. pullovers)" value={accSearch} onChange={e=>setAccSearch(e.target.value)} style={{flex:1}}/>
+              {accSearch&&<button className="x" onClick={()=>setAccSearch("")} style={{width:40,flexShrink:0}} title="Clear">✕</button>}
+            </div>
+            {(()=>{const q=accSearch.trim().toLowerCase();if(q.length<2)return null;const cur=new Set(Object.values(anchors||{}));const matches=EXERCISES.filter(e=>e.name.toLowerCase().includes(q)&&!banned.includes(e.name)&&!cur.has(e.name)&&!accs.some(a=>a.name===e.name)).slice(0,8);if(!matches.length)return <div style={{fontFamily:mono,fontSize:11,color:C.dim,marginTop:6}}>no matches in catalog</div>;return <div style={{display:"flex",flexWrap:"wrap",gap:6,marginTop:6}}>{matches.map(e=><button key={e.name} className="pill" onClick={()=>addAccByName(e.name)}>+ {e.name}</button>)}</div>;})()}
           </div>
           {accs.map(a=><div key={a.id} className="card" style={{borderLeft:a.locked?`3px solid ${C.amber}`:`1px solid ${C.line}`}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
