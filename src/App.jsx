@@ -820,7 +820,7 @@ export default function App(){
       </div>
 
       {!allSet||setup?<>
-        <div className="eyebrow"><span style={{color:C.arc}}>Select 6 anchors</span></div>
+        <div className="eyebrow"><span style={{color:C.arc}}>{allSet?"Change anchors · pick, then Done":"Select 6 anchors"}</span>{allSet&&setup&&<button className="btn-ghost act" onClick={()=>setSetup(false)}>Done</button>}</div>
         {PATTERNS.map(p=><div key={p.id} className="card plate">
           <div className="pat-eyebrow">{p.full}</div>
           <div className="pillwrap">
