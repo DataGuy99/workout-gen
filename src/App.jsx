@@ -8,7 +8,7 @@ const SK={anchors:"wg2-anchors",anchorLog:"wg2-anchor-log",accLog:"wg2-acc-log",
   banned:"wg2-banned",prefs:"wg2-prefs",nutrition:"wg2-nutrition",body:"wg2-body",cardio:"wg2-cardio",
   daytargets:"wg2-daytargets",
   profile:"wg2-profile",
-  meso:"wg2-meso",history:"wg2-history",metgoal:"wg2-metgoal",eccentrix:"wg2-eccentrix"};
+  meso:"wg2-meso",history:"wg2-history",metgoal:"wg2-metgoal",eccentrix:"wg2-eccentrix",power:"wg2-power"};
 
 // ── DESIGN TOKENS ──
 const mono="'JetBrains Mono','Fira Code',monospace";
@@ -205,6 +205,15 @@ const RIR_PROGRESS=3;
 // so it always uses a MET value x duration. All tunable.
 const RESIST_MET=5;                                    // vigorous resistance training
 const CARDIO_MET={steady:7,hiit:9,rowing:7};                    // fallback when kcal/kg unavailable
+// ── POWER (ballistic) tunables ──
+// Time is the fixed constant (the window); user logs reps done fast inside it. Flat target,
+// no velocity-loss autoregulation. Load ~50% e1RM — submaximal load moved at maximal velocity
+// trains power (Cormie 2007; Wilson 1993: 30–60% 1RM develops force+velocity). Plate-rounded,
+// user-editable. Power is a third goal alongside hypertrophy and strength.
+const POWER_WINDOW=15;   // s, effort window
+const POWER_REPS=5;      // target reps inside the window
+const POWER_PCT=0.5;     // fraction of e1RM for the starting load
+const POWER_INC=5;       // lb added next session when target is met
 // ── BODYWEIGHT PROGRESSION ──
 // For bw-tagged exercises: load is fixed (bodyweight + any added), progress by
 // reps (or seconds for holds). Reads sets by reps only, never the weight filter.
@@ -260,12 +269,37 @@ function bwProgression(ex,last,repRange,targetRIR,bodyWeight){
   return{weight:"",reps:C,sets:ls.length,note:`${loadStr} · ${C}r @ RIR ${R} (optimal zone). Hold ${C}r.`,ramp:added}; // RIR 1-2: hold
 }
 
-function getProgression(name,log,repRange=[6,10],targetRIR=2,bodyWeight=0){
+// ── POWER PROGRESSION (flat target) ──
+// Reads prior power sets (pwr flag). Met target reps inside the window → add load; else hold.
+// First power session derives the load from e1RM (or 60% of the top working set if no RIR
+// history exists). Same return contract as getProgression (weight,reps,sets,note + flags),
+// plus power:true and win (the window) for the UI. Loaded movements only.
+function powerProg(name,log){
+  const r5=x=>Math.round(x/5)*5;
+  const h=log[name];
+  if(!h||!h.length)return{weight:"",reps:POWER_REPS,sets:3,win:POWER_WINDOW,power:true,isNew:true,note:`Power: find a load you can move fast for ${POWER_REPS} reps inside ${POWER_WINDOW}s (~${Math.round(POWER_PCT*100)}% 1RM).`};
+  const last=h[h.length-1];
+  const ls=last.sets.filter(s=>s.reps&&s.weight);
+  if(!ls.length)return{weight:"",reps:POWER_REPS,sets:3,win:POWER_WINDOW,power:true,isNew:true,note:"No data last session."};
+  const lastPwr=ls.filter(s=>s.pwr);
+  if(lastPwr.length){
+    const topLoad=Math.max(...lastPwr.map(s=>+s.weight));
+    const topReps=Math.max(...lastPwr.filter(s=>+s.weight===topLoad).map(s=>+s.reps));
+    if(topReps>=POWER_REPS){const w=topLoad+POWER_INC;return{weight:w,reps:POWER_REPS,sets:lastPwr.length,win:POWER_WINDOW,power:true,progressed:true,note:`Power: ${topReps}≥${POWER_REPS} fast reps in ${POWER_WINDOW}s. Up to ${w}lb.`};}
+    return{weight:topLoad,reps:POWER_REPS,sets:lastPwr.length,win:POWER_WINDOW,power:true,note:`Power: ${topReps}/${POWER_REPS} in ${POWER_WINDOW}s. Hold ${topLoad}lb, chase ${POWER_REPS} fast reps.`};
+  }
+  const rs=ls.filter(s=>s.rir!=null&&s.rir!=="");
+  if(rs.length){let num=0,den=0;rs.forEach(s=>{const rtf=(+s.reps)+(+s.rir);const e=(+s.weight)*(1+rtf/30);const rel=1/(1+(+s.rir));num+=e*rel;den+=rel;});const e1rm=Math.round(num/den);const w=r5(e1rm*POWER_PCT);return{weight:w,reps:POWER_REPS,sets:3,win:POWER_WINDOW,power:true,note:`Power start: ${Math.round(POWER_PCT*100)}% of e1RM ${e1rm} = ${w}lb, ${POWER_REPS} fast reps in ${POWER_WINDOW}s.`};}
+  const top=Math.max(...ls.map(s=>+s.weight));const w=r5(top*0.6);
+  return{weight:w,reps:POWER_REPS,sets:3,win:POWER_WINDOW,power:true,note:`Power start: ~${w}lb (60% of ${top}), ${POWER_REPS} fast reps in ${POWER_WINDOW}s.`};
+}
+function getProgression(name,log,repRange=[6,10],targetRIR=2,bodyWeight=0,powerMode=false){
   const h=log[name];
   if(!h||!h.length)return{weight:"",reps:repRange[0],sets:3,note:`First session. Find weight for ${repRange[0]} reps @ RIR ${targetRIR}.`,isNew:true};
   const last=h[h.length-1];
   const exDef=EXERCISES.find(x=>x.name===name);
   if(exDef&&exDef.bw)return bwProgression(exDef,last,repRange,targetRIR,bodyWeight);
+  if(powerMode&&!(exDef&&exDef.bw))return powerProg(name,log);
   const ls=last.sets.filter(s=>s.reps&&s.weight);
   if(!ls.length)return{weight:"",reps:repRange[0],sets:3,note:"No data last session.",isNew:true,ramp:null};
   // ── PROGRESSION MODEL C: weighted e1RM across ALL sets ──
@@ -460,11 +494,20 @@ const Stars=({value,onChange,size=18})=>(<div style={{display:"flex",gap:4}}>
   {[1,2,3].map(s=><span key={s} onClick={e=>{e.stopPropagation();onChange(value===s?0:s);}}
     style={{cursor:"pointer",fontSize:size,color:s<=value?C.amber:C.line,userSelect:"none",lineHeight:1}}>★</span>)}</div>);
 
-function SetRow({set,i,onUp,onRm,showPain,isHold,showEcc}){
+function SetRow({set,i,onUp,onRm,showPain,isHold,showEcc,showPwr,win=POWER_WINDOW}){
   const rc=set.rir!=null&&set.rir!==""?RIR_C(+set.rir):C.line;
   const pc=set.pain!=null&&set.pain!==""?PAIN_C(+set.pain):C.line;
   const[running,setRunning]=useState(false);
   const[elapsed,setElapsed]=useState(0);
+  const[pwrRun,setPwrRun]=useState(false);
+  const[pwrLeft,setPwrLeft]=useState(win);
+  useEffect(()=>{
+    if(!pwrRun)return;
+    const end=Date.now()+pwrLeft*1000;
+    const iv=setInterval(()=>{const r=Math.max(0,Math.ceil((end-Date.now())/1000));setPwrLeft(r);if(r<=0){clearInterval(iv);setPwrRun(false);}},200);
+    return()=>clearInterval(iv);
+  },[pwrRun]);
+  const pwrToggle=()=>{if(pwrRun){setPwrRun(false);}else{setPwrLeft(win);setPwrRun(true);}};
   useEffect(()=>{
     if(!running)return;
     const t0=Date.now()-elapsed*1000;
@@ -480,6 +523,8 @@ function SetRow({set,i,onUp,onRm,showPain,isHold,showEcc}){
     <input className="in" type="number" inputMode="numeric" placeholder={isHold?"sec":"reps"} value={set.reps||""} onChange={e=>onUp(i,"reps",e.target.value)} style={{flex:1}}/>
     {isHold&&<button className="x" onClick={toggle} title="Hold timer"
       style={{width:62,flexShrink:0,fontFamily:mono,fontSize:12,color:running?C.alarm:C.amber,borderColor:running?C.alarm:C.line}}>{running?`${elapsed}s`:"time"}</button>}
+    {showPwr&&!isHold&&<button className="x" onClick={pwrToggle} title={`Power window ${win}s`}
+      style={{width:62,flexShrink:0,fontFamily:mono,fontSize:12,color:pwrRun?(pwrLeft<=0?C.alarm:C.arc):C.amber,borderColor:pwrRun?C.arc:C.line}}>{pwrRun?`${pwrLeft}s`:`▸${win}s`}</button>}
     {showEcc&&<input className="in" type="number" inputMode="numeric" placeholder="ecc" value={set.ecc??""} onChange={e=>onUp(i,"ecc",e.target.value)} title="Eccentric (negative-only) reps, half credit"
       style={{width:48,flexShrink:0,color:set.ecc?C.warn:C.bone,borderColor:set.ecc?C.warn:C.line}}/>}
     <input className="in" type="number" inputMode="decimal" placeholder="lbs" value={set.weight||""} onChange={e=>onUp(i,"weight",e.target.value)} style={{width:76,flexShrink:0}}/>
@@ -533,6 +578,7 @@ export default function App(){
   const[editDur,setEditDur]=useState(null);const[editDurVal,setEditDurVal]=useState("");
   const[metGoal,setMetGoal]=useState(()=>ld(SK.metgoal,40));
   const[eccEnabled,setEccEnabled]=useState(()=>ld(SK.eccentrix,true));
+  const[powerEnabled,setPowerEnabled]=useState(()=>ld(SK.power,false));
   const[setup,setSetup]=useState(false);
   const[dayTargets,setDayTargets]=useState(()=>ld(SK.daytargets,Array.from({length:7},()=>({cal:2400,pro:190,carb:208,fat:90}))));
   const[logDate,setLogDate]=useState(()=>new Date().toISOString().slice(0,10));
@@ -555,11 +601,11 @@ export default function App(){
     const sets={};const isDeload=mesoState.phase==="deload";
     PATTERNS.forEach(p=>{
       if(!anchors[p.id])return;
-      const prog=getProgression(anchors[p.id],anchorLog,[6,10],2,latestBW);
+      const prog=getProgression(anchors[p.id],anchorLog,[6,10],2,latestBW,powerEnabled);
       const n=isDeload?2:(prog.sets||3);
       const w=isDeload&&prog.weight?Math.round(+prog.weight*0.7):prog.weight;
       // ── LIVE: flat prescription (every set same weight) ──
-      sets[p.id]=Array.from({length:n},()=>({reps:prog.reps||"",weight:w||"",rir:"",pain:"",...(prog.eccTarget?{ecc:prog.eccTarget}:{})}));
+      sets[p.id]=Array.from({length:n},()=>({reps:prog.reps||"",weight:w||"",rir:"",pain:"",...(prog.eccTarget?{ecc:prog.eccTarget}:{}),...(prog.power?{pwr:1}:{})}));
       // ── DORMANT: ramp/progressive pre-fill. Marker: RAMP_PREFILL ──
       // To enable ascending per-set loading: comment out the flat line above,
       // uncomment the block below. Reuses last session's ramp shape (prog.ramp),
@@ -580,7 +626,7 @@ export default function App(){
     const recentNames=[...new Set((accLog||[]).slice(-2).flatMap(e=>(e.exercises||[]).map(x=>x.name)))];
     const accRange=[[8,12],[12,15],[15,20]][((accLog&&accLog.length)||0)%3];
     setAccs(genAcc(accCount,banned,prefs,fatigue,weekVol,anchorMuscleLoad(anchors,sets),recentNames,accRange,[],isDeload));
-  },[anchors,anchorLog,accCount,banned,prefs,fatigue,weekVol,mesoState.phase,latestBW,accLog,eccEnabled]);
+  },[anchors,anchorLog,accCount,banned,prefs,fatigue,weekVol,mesoState.phase,latestBW,accLog,eccEnabled,powerEnabled]);
 
   useEffect(()=>{if(allSet&&!setup)initSession();},[allSet,setup]);
 
@@ -605,7 +651,7 @@ export default function App(){
       if(!anchors[p.id]||!anchorSets[p.id])return;
       const logged=anchorSets[p.id].filter(s=>s.reps||s.ecc);if(!logged.length)return;
       const nm=anchors[p.id];if(!newAL[nm])newAL[nm]=[];
-      newAL[nm].push({date:new Date().toISOString(),sets:logged.map(s=>({reps:+s.reps||0,weight:+s.weight||0,rir:s.rir!==""?+s.rir:null,pain:s.pain!==""?+s.pain:null,...(s.ecc?{ecc:+s.ecc}:{})}))});
+      newAL[nm].push({date:new Date().toISOString(),sets:logged.map(s=>({reps:+s.reps||0,weight:+s.weight||0,rir:s.rir!==""?+s.rir:null,pain:s.pain!==""?+s.pain:null,...(s.ecc?{ecc:+s.ecc}:{}),...(s.pwr?{pwr:1}:{})}))});
       if(newAL[nm].length>40)newAL[nm]=newAL[nm].slice(-40);
     });
     setAnchorLog(newAL);sv(SK.anchorLog,newAL);
@@ -743,6 +789,12 @@ export default function App(){
         <span style={{fontFamily:mono,fontSize:10,color:C.steel}}>eccentric-assisted BW progression</span>
       </div>
 
+      <div style={{display:"flex",gap:8,alignItems:"center",margin:"0 0 10px",flexWrap:"wrap"}}>
+        <span style={{fontFamily:mono,fontSize:11,color:C.dim,flexShrink:0}}>POWER</span>
+        <button className={`daytype${powerEnabled?" on":""}`} style={{flex:0,padding:"0 12px",height:32}} onClick={()=>setPowerEnabled(v=>{const n=!v;sv(SK.power,n);return n;})}>{powerEnabled?"ON":"OFF"}</button>
+        <span style={{fontFamily:mono,fontSize:10,color:C.steel}}>ballistic · ${POWER_REPS} fast reps / ${POWER_WINDOW}s window</span>
+      </div>
+
       {!allSet||setup?<>
         <div className="eyebrow"><span style={{color:C.arc}}>Select 6 anchors</span></div>
         {PATTERNS.map(p=><div key={p.id} className="card plate">
@@ -795,7 +847,7 @@ export default function App(){
         {sessionMode==="full"&&<>
           {PATTERNS.map(p=>{
             if(!anchors[p.id])return null;
-            const prog=getProgression(anchors[p.id],anchorLog,[6,10],2,latestBW);
+            const prog=getProgression(anchors[p.id],anchorLog,[6,10],2,latestBW,powerEnabled);
             const sets=anchorSets[p.id]||[];
             const hasPain=sets.some(s=>s.pain!=null&&s.pain!==""&&+s.pain>=6);
             const stripe=hasPain?C.alarm:prog.deload?C.alarm:prog.progressed?C.go:C.arc;
@@ -812,7 +864,7 @@ export default function App(){
                 <span className="chip" style={{color:chip.c,background:`${chip.c}1c`,border:`1px solid ${chip.c}44`}}>{chip.t}</span>
                 <p>{prog.note}{prog.weight?<span className="tgt"> → {prog.reps}r × {prog.weight}lb</span>:null}</p>
               </div>
-              {sets.map((s,i)=><SetRow key={i} set={s} i={i} showPain={true} isHold={!!(EXERCISES.find(x=>x.name===anchors[p.id])||{}).hold} showEcc={(()=>{const e=EXERCISES.find(x=>x.name===anchors[p.id])||{};return !!e.bw&&!e.hold&&eccEnabled;})()}
+              {sets.map((s,i)=><SetRow key={i} set={s} i={i} showPain={true} isHold={!!(EXERCISES.find(x=>x.name===anchors[p.id])||{}).hold} showEcc={(()=>{const e=EXERCISES.find(x=>x.name===anchors[p.id])||{};return !!e.bw&&!e.hold&&eccEnabled;})()} showPwr={(()=>{const e=EXERCISES.find(x=>x.name===anchors[p.id])||{};return powerEnabled&&!e.bw&&!e.hold;})()} win={prog.win||POWER_WINDOW}
                 onUp={(idx,f,v)=>updAS(p.id,idx,f,v)} onRm={idx=>rmAS(p.id,idx)}/>)}
               <button className="addset" onClick={()=>addAS(p.id)}>+ set</button>
             </div>);
@@ -836,7 +888,7 @@ export default function App(){
               </div>
             </div>
             <div style={{marginTop:4}}>
-              {a.sets.map((s,i)=><SetRow key={i} set={s} i={i} showPain={false} isHold={!!(EXERCISES.find(x=>x.name===a.name)||{}).hold} showEcc={(()=>{const e=EXERCISES.find(x=>x.name===a.name)||{};return !!e.bw&&!e.hold&&eccEnabled;})()}
+              {a.sets.map((s,i)=><SetRow key={i} set={s} i={i} showPain={false} isHold={!!(EXERCISES.find(x=>x.name===a.name)||{}).hold} showEcc={(()=>{const e=EXERCISES.find(x=>x.name===a.name)||{};return !!e.bw&&!e.hold&&eccEnabled;})()} showPwr={(()=>{const e=EXERCISES.find(x=>x.name===a.name)||{};return powerEnabled&&!e.bw&&!e.hold;})()}
                 onUp={(idx,f,v)=>updAcc(a.id,idx,f,v)} onRm={idx=>rmAcc(a.id,idx)}/>)}
             </div>
             <button className="addset" onClick={()=>addAccSet(a.id)}>+ set</button>
