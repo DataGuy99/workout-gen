@@ -102,7 +102,27 @@ composition verdict flags a fat-gain/recomp pattern.
 
 ---
 
-## 5. Done & deployed (latest commit `01a248b`)
+## 5. Done & deployed (latest commit `e5ca94c`)
+**Session 2025-06-22 shipped (all CI-green):**
+- `e45d84a` POWER (ballistic) mode — global toggle in LIFT mirroring ECCENTRIC (SK `wg2-power`,
+  default OFF). Loaded anchors prescribe ~50% e1RM (plate-rounded, editable) × `POWER_REPS`(5)
+  fast reps inside a `POWER_WINDOW`(15s) window; each loaded set row gets an optional countdown
+  timer. Flat target: hit reps→+`POWER_INC`(5)lb, miss→hold. New `powerProg()`; `getProgression`
+  gained a `powerMode` param (loaded anchors only; accessories + model-C untouched). Power sets
+  tagged `pwr:1` and persisted so progression survives sessions. First power session derives load
+  from e1RM, or 60% of top working set if no RIR history.
+- `48417d0` CATALOG GAP-FILL — added 8 barbell/landmine staples with proportions assigned from
+  biomechanics: Barbell Bench Press, Incline Barbell Bench, Barbell Push Press, Barbell Back Squat,
+  Barbell Front Squat, Barbell Lunges, Barbell Curls, Landmine RDL. Anchor-relevant ones wired into
+  PATTERN_MAP (fixes inability to pick a flat barbell bench for H.Press). Catalog now 104 exercises.
+- `e5ca94c` ACCESSORY SEARCH + VARIETY FIX — search box under Accessories: type ≥2 chars, tap a
+  catalog match → inserts as a locked accessory, search clears, unlocked slots auto-fill excluding
+  locked names. Extracted `buildAcc()` (shared by manual-add + auto-selector). Fixed the "same ~8"
+  funnel: softened the headroom term to a tiebreaker (`frac=0.5+0.5*head/cap`, was a hard gate) and
+  built the pick window from top-`ACC_PER_CAT`(4) per movement category so push/pull/legs/core all
+  surface (was: weighted-random over global top-6 = permanently calves/abs/shrugs). Recency 2→3.
+
+**Prior (commit `01a248b` and earlier):**
 - Accessory engine: recency + intensity cycling; fixed a bug where `genAcc` read the flat
   `accLog` instead of the keyed `accLog+"_prog"` (accessories never progressed); reroll dedup;
   star rating protects recency.
@@ -124,9 +144,9 @@ composition verdict flags a fat-gain/recomp pattern.
 
 ## 6. QUEUED — build next, one at a time, per the §2 cadence
 Design is **already decided** for all three (owner delegated the exact rules where noted —
-keep them research-grounded). Build order suggestion: Power → Set-count → Custom anchors.
+keep them research-grounded). Power is DONE (`e45d84a`). Remaining build order: Set-count → Custom anchors.
 
-### 6.1 Power timers + power progression  *(research-grounded; model decided)*
+### 6.1 Power timers + power progression  — ✅ DONE, shipped `e45d84a` (see §5)
 - **Global "Power" toggle** in settings, mirroring the ECCENTRIC toggle (new `SK` key e.g.
   `wg2-power`, default OFF). When ON, **every set row** gets an *optional* per-set timer —
   extend the existing hold stopwatch in `SetRow` (~466–482), which already does start/stop and
@@ -159,8 +179,32 @@ keep them research-grounded). Build order suggestion: Power → Set-count → Cu
   select your own anchors and run that custom set for a mesocycle. Integrates cleanly: the
   volume/accessory engine already reads each anchor's *assigned-exercise muscle profile*, not the
   pattern label, and logged history is keyed by exercise name (so it survives slot changes).
-- **Open sub-decisions to confirm with the owner:** variable slot count? custom slot names?
-  start the custom set from the 6 as an editable preset, or from blank?
+- **SPEC LOCKED with owner (2025-06-22):**
+  - At meso start, show TWO cards: a prominent **"Default anchor configuration"** (the fixed 6) and
+    a smaller / duller / thinner **"Custom configuration"** card.
+  - Custom = **variable slot count, 6–12 slots**. Each slot has a **pattern-type label** chosen from
+    the 6 types (H.Press, V.Press, H.Pull, V.Pull, Squat, Hinge) — **repeats allowed** (e.g. two
+    H.Press slots) — plus an **exercise of the owner's choice** assigned to that slot (allow ANY
+    catalog exercise, ideally filtered/grouped by the slot's pattern category, NOT limited to the
+    curated PATTERN_MAP).
+  - Slots are **reorderable**. Owner wants a grip portion on each card to drag.
+  - **Reorder engineering decision (made):** native HTML5 touch-drag is unreliable in this plain-React
+    stack (no DnD lib available). Implement a **pointer-event drag grip** on each card, with **up/down
+    arrow controls as a guaranteed fallback** so mobile never feels broken.
+- **Implementation plan (blast radius audited 2025-06-22):** generalize the fixed `PATTERNS` const into
+  a dynamic `activeSlots` array (default = the 6 templates; custom = saved config). Keep the 6 as
+  pattern-type *templates* (id/label/full/muscles); a custom slot = `{id:"custom-N", type, label, full,
+  muscles}` with the assigned exercise in `anchors[slot.id]` (unique id since labels repeat). Persist
+  config under a new SK key (e.g. `wg2-anchorcfg` = `{mode, slots:[{id,type,exercise?}]}`).
+  Then swap `PATTERNS` → `activeSlots` at all **13 sites** (so existing `anchors[p.id]`/`p.label`/
+  `p.muscles`/`sets[p.id]` keep working unchanged): module fn `anchorMuscleLoad` (~378, change sig to
+  take `slots` and thread to its 3 callers — `initSession`, `rerollAcc`, `addAccByName`), `allSet`
+  (~598), `initSession` (~609), `saveSession` (~674, ~691 fatigue uses `p.muscles`, ~701 hist), anchor
+  render (~872), anchor setup picker (~824, options should come from the slot's category not just
+  `PATTERN_MAP[p.id]`), and the four Trends sites (~745, ~1078, ~1095, ~1127, ~1142). Logged history is
+  keyed by exercise name so it survives slot changes. The configurator UI (variable slots, per-slot
+  type + exercise pickers, add/remove 6–12, reorder grip) is ~100+ lines — build it as a dedicated
+  component. Owner reorder UX: grip drag + up/down fallback.
 
 ---
 
@@ -171,6 +215,12 @@ keep them research-grounded). Build order suggestion: Power → Set-count → Cu
   it's a plain slope. It uses the log timestamp as a proxy for measurement time (best if the
   owner logs promptly).
 - A commented-out `RAMP_PREFILL` block in `initSession` is intentional and harmless.
+- **INFRA BUG (separate cleanup, not yet done):** `node_modules` is committed to the repo because
+  `.gitignore` line reads `-e node_modules` (a stray `echo -e` artifact) instead of `node_modules`.
+  CI runs `npm ci` so the committed tree isn't load-bearing. Recommend: fix `.gitignore` to
+  `node_modules`, `git rm -r --cached node_modules`, commit. When working in this repo, stage ONLY
+  `src/` files (the clone's `node_modules` churns on `npm install`); restore with
+  `git checkout -- node_modules package-lock.json` before committing.
 - An earlier 4-phase data spec was completed; **this brief supersedes it** for what comes next.
 - When resuming: confirm the working tree is clean and `main` is at the latest commit, then start
   with §6.1, following the §2 cadence end to end.
