@@ -25,6 +25,7 @@ export const EXERCISES=[
   {name:"Barbell Upright Rows",eq:"barbell",p:[{m:"shoulders",p:40},{m:"traps",p:35}],s:[{m:"biceps",p:15},{m:"forearms",p:10}],cat:"pull"},
   {name:"Dumbbell Upright Rows",eq:"dumbbells",p:[{m:"shoulders",p:40},{m:"traps",p:35}],s:[{m:"biceps",p:15},{m:"forearms",p:10}],cat:"pull"},
   {name:"Inverted Rows",eq:"barbell (low bar)",p:[{m:"back",p:50},{m:"biceps",p:25}],s:[{m:"core",p:15},{m:"shoulders",p:10}],cat:"pull",bw:true},
+  {name:"Barbell Curls",eq:"barbell",p:[{m:"biceps",p:80}],s:[{m:"forearms",p:20}],cat:"pull"},
   // PUSH
   {name:"Dips",eq:"dip attachment",p:[{m:"chest",p:40},{m:"triceps",p:35}],s:[{m:"shoulders",p:25}],cat:"push",bw:true},
   {name:"Push-ups",eq:"bodyweight",p:[{m:"chest",p:45},{m:"triceps",p:30}],s:[{m:"shoulders",p:15},{m:"core",p:10}],cat:"push",bw:true},
@@ -51,6 +52,9 @@ export const EXERCISES=[
   {name:"Dumbbell Kickbacks",eq:"dumbbells",p:[{m:"triceps",p:85}],s:[{m:"shoulders",p:15}],cat:"push"},
   {name:"Plate Front Raises",eq:"bumper plate",p:[{m:"shoulders",p:70}],s:[{m:"chest",p:15},{m:"core",p:15}],cat:"push"},
   {name:"Svend Press",eq:"bumper plate",p:[{m:"chest",p:60}],s:[{m:"shoulders",p:25},{m:"triceps",p:15}],cat:"push"},
+  {name:"Barbell Bench Press",eq:"barbell + bench",p:[{m:"chest",p:55},{m:"triceps",p:25}],s:[{m:"shoulders",p:20}],cat:"push"},
+  {name:"Incline Barbell Bench Press",eq:"barbell + bench",p:[{m:"chest",p:45},{m:"shoulders",p:30}],s:[{m:"triceps",p:25}],cat:"push"},
+  {name:"Barbell Push Press",eq:"barbell",p:[{m:"shoulders",p:45},{m:"triceps",p:25}],s:[{m:"quads",p:15},{m:"core",p:10},{m:"traps",p:5}],cat:"push"},
   // LEGS
   {name:"Belt Squat",eq:"belt + plates",p:[{m:"quads",p:55},{m:"glutes",p:30}],s:[{m:"hamstrings",p:10},{m:"calves",p:5}],cat:"legs"},
   {name:"Landmine Squat",eq:"barbell (landmine)",p:[{m:"quads",p:50},{m:"glutes",p:30}],s:[{m:"core",p:15},{m:"hamstrings",p:5}],cat:"legs"},
@@ -79,6 +83,10 @@ export const EXERCISES=[
   {name:"Pistol Squats",eq:"bodyweight",p:[{m:"quads",p:45},{m:"glutes",p:30}],s:[{m:"core",p:15},{m:"hamstrings",p:10}],cat:"legs",bw:true},
   {name:"Sissy Squats",eq:"bodyweight",p:[{m:"quads",p:80}],s:[{m:"core",p:10},{m:"calves",p:10}],cat:"legs",bw:true},
   {name:"Wall Sit",eq:"bodyweight",p:[{m:"quads",p:70},{m:"glutes",p:20}],s:[{m:"calves",p:10}],cat:"legs",bw:true,hold:true},
+  {name:"Barbell Back Squat",eq:"barbell",p:[{m:"quads",p:50},{m:"glutes",p:30}],s:[{m:"hamstrings",p:10},{m:"core",p:10}],cat:"legs"},
+  {name:"Barbell Front Squat",eq:"barbell",p:[{m:"quads",p:60},{m:"glutes",p:20}],s:[{m:"core",p:15},{m:"hamstrings",p:5}],cat:"legs"},
+  {name:"Barbell Lunges",eq:"barbell",p:[{m:"quads",p:40},{m:"glutes",p:35}],s:[{m:"hamstrings",p:15},{m:"calves",p:10}],cat:"legs"},
+  {name:"Landmine Romanian Deadlift",eq:"barbell (landmine)",p:[{m:"hamstrings",p:45},{m:"glutes",p:30}],s:[{m:"back",p:15},{m:"core",p:10}],cat:"legs"},
   // CORE
   {name:"Hanging Leg Raises",eq:"pull-up bar",p:[{m:"core",p:85}],s:[{m:"biceps",p:10},{m:"forearms",p:5}],cat:"core",bw:true},
   {name:"Hanging Knee Raises",eq:"pull-up bar",p:[{m:"core",p:80}],s:[{m:"biceps",p:10},{m:"forearms",p:10}],cat:"core",bw:true},
