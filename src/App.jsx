@@ -1,4 +1,4 @@
-import{useState,useEffect,useCallback,useMemo}from"react";
+import{useState,useEffect,useCallback,useMemo,useRef}from"react";
 import{MUSCLES,EXERCISES}from"./exercises.js";
 
 // ── STORAGE ──
@@ -505,15 +505,33 @@ function SetRow({set,i,onUp,onRm,showPain,isHold,showEcc,showPwr,win=POWER_WINDO
   const pc=set.pain!=null&&set.pain!==""?PAIN_C(+set.pain):C.line;
   const[running,setRunning]=useState(false);
   const[elapsed,setElapsed]=useState(0);
-  const[pwrRun,setPwrRun]=useState(false);
+  const[pwrMode,setPwrMode]=useState("idle"); // idle | edit | run | done
+  const[pwrWin,setPwrWin]=useState(win);
   const[pwrLeft,setPwrLeft]=useState(win);
-  useEffect(()=>{
-    if(!pwrRun)return;
+  const audioRef=useRef(null);
+  useEffect(()=>{                                          // countdown
+    if(pwrMode!=="run")return;
     const end=Date.now()+pwrLeft*1000;
-    const iv=setInterval(()=>{const r=Math.max(0,Math.ceil((end-Date.now())/1000));setPwrLeft(r);if(r<=0){clearInterval(iv);setPwrRun(false);}},200);
+    const iv=setInterval(()=>{const r=Math.max(0,Math.ceil((end-Date.now())/1000));setPwrLeft(r);if(r<=0){clearInterval(iv);setPwrMode("done");}},150);
     return()=>clearInterval(iv);
-  },[pwrRun]);
-  const pwrToggle=()=>{if(pwrRun){setPwrRun(false);}else{setPwrLeft(win);setPwrRun(true);}};
+  },[pwrMode]);
+  useEffect(()=>{                                          // alarm: sound + vibrate + flash until dismissed
+    if(pwrMode!=="done")return;
+    const fire=()=>{
+      try{const ac=audioRef.current;if(ac){[0,0.18,0.36].forEach(dt=>{const o=ac.createOscillator(),g=ac.createGain();o.connect(g);g.connect(ac.destination);o.type="square";o.frequency.value=988;const t=ac.currentTime+dt;g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(0.35,t+0.02);g.gain.exponentialRampToValueAtTime(0.0001,t+0.14);o.start(t);o.stop(t+0.16);});}}catch(e){}
+      try{if(navigator.vibrate)navigator.vibrate([400,120,400,120,600]);}catch(e){}
+    };
+    fire();const iv=setInterval(fire,1100);
+    return()=>{clearInterval(iv);try{if(navigator.vibrate)navigator.vibrate(0);}catch(e){}};
+  },[pwrMode]);
+  const pwrStart=()=>{                                     // create/resume AudioContext inside the gesture so the alarm can sound later
+    try{if(!audioRef.current){const AC=window.AudioContext||window.webkitAudioContext;if(AC)audioRef.current=new AC();}if(audioRef.current&&audioRef.current.state==="suspended")audioRef.current.resume();}catch(e){}
+    setPwrLeft(+pwrWin>0?+pwrWin:win);setPwrMode("run");
+  };
+  const pwrTap=()=>{
+    if(pwrMode==="idle")setPwrMode("edit");
+    else setPwrMode("idle");                                // running -> cancel, done -> dismiss alarm
+  };
   useEffect(()=>{
     if(!running)return;
     const t0=Date.now()-elapsed*1000;
@@ -529,8 +547,14 @@ function SetRow({set,i,onUp,onRm,showPain,isHold,showEcc,showPwr,win=POWER_WINDO
     <input className="in" type="number" inputMode="numeric" placeholder={isHold?"sec":"reps"} value={set.reps||""} onChange={e=>onUp(i,"reps",e.target.value)} style={{flex:1}}/>
     {isHold&&<button className="x" onClick={toggle} title="Hold timer"
       style={{width:62,flexShrink:0,fontFamily:mono,fontSize:12,color:running?C.alarm:C.amber,borderColor:running?C.alarm:C.line}}>{running?`${elapsed}s`:"time"}</button>}
-    {showPwr&&!isHold&&<button className="x" onClick={pwrToggle} title={`Power window ${win}s`}
-      style={{width:62,flexShrink:0,fontFamily:mono,fontSize:12,color:pwrRun?(pwrLeft<=0?C.alarm:C.arc):C.amber,borderColor:pwrRun?C.arc:C.line}}>{pwrRun?`${pwrLeft}s`:`▸${win}s`}</button>}
+    {showPwr&&!isHold&&(pwrMode==="edit"
+      ? <span style={{display:"flex",gap:2,flexShrink:0,alignItems:"center"}}>
+          <input className="in" type="number" inputMode="numeric" autoFocus value={pwrWin} onChange={e=>setPwrWin(e.target.value)} onKeyDown={e=>{if(e.key==="Enter")pwrStart();}} title="Seconds, then tap the play button" style={{width:42,flexShrink:0,padding:"0 4px",textAlign:"center"}}/>
+          <button className="x" onClick={pwrStart} title="Start timer" style={{width:30,flexShrink:0,fontFamily:mono,fontSize:14,color:C.go,borderColor:C.go}}>▶</button>
+        </span>
+      : <button className="x" onClick={pwrTap} title="Power timer — tap to set seconds, tap again to start"
+          style={{width:62,flexShrink:0,fontFamily:mono,fontSize:12,color:pwrMode==="done"?"#fff":pwrMode==="run"?C.arc:C.go,borderColor:pwrMode==="done"?C.alarm:pwrMode==="run"?C.arc:C.go,background:pwrMode==="done"?C.alarm:"transparent"}}>{pwrMode==="run"?`${pwrLeft}s`:pwrMode==="done"?"⏰ UP":`⏱ ${pwrWin||win}s`}</button>
+    )}
     {showEcc&&<input className="in" type="number" inputMode="numeric" placeholder="ecc" value={set.ecc??""} onChange={e=>onUp(i,"ecc",e.target.value)} title="Eccentric (negative-only) reps, half credit"
       style={{width:48,flexShrink:0,color:set.ecc?C.warn:C.bone,borderColor:set.ecc?C.warn:C.line}}/>}
     <input className="in" type="number" inputMode="decimal" placeholder="lbs" value={set.weight||""} onChange={e=>onUp(i,"weight",e.target.value)} style={{width:76,flexShrink:0}}/>
