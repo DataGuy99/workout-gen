@@ -8,7 +8,7 @@ const SK={anchors:"wg2-anchors",anchorLog:"wg2-anchor-log",accLog:"wg2-acc-log",
   banned:"wg2-banned",prefs:"wg2-prefs",nutrition:"wg2-nutrition",body:"wg2-body",cardio:"wg2-cardio",
   daytargets:"wg2-daytargets",
   profile:"wg2-profile",
-  meso:"wg2-meso",history:"wg2-history",metgoal:"wg2-metgoal",eccentrix:"wg2-eccentrix",power:"wg2-power"};
+  meso:"wg2-meso",history:"wg2-history",metgoal:"wg2-metgoal",eccentrix:"wg2-eccentrix",power:"wg2-power",anchorcfg:"wg2-anchorcfg"};
 
 // ── DESIGN TOKENS ──
 const mono="'JetBrains Mono','Fira Code',monospace";
@@ -373,9 +373,9 @@ function getMesoState(meso){
 // ── ACCESSORIES ──
 // Per-muscle load (hard-set-equivalent: sets x muscle involvement%) from today's
 // anchors. Read-only input to accessory selection; anchors are never modified.
-function anchorMuscleLoad(anchors,sets){
+function anchorMuscleLoad(anchors,sets,slots=PATTERNS){
   const load={};MUSCLES.forEach(m=>load[m]=0);
-  PATTERNS.forEach(p=>{const nm=anchors[p.id];if(!nm)return;const ex=EXERCISES.find(x=>x.name===nm);if(!ex)return;
+  slots.forEach(p=>{const nm=anchors[p.id];if(!nm)return;const ex=EXERCISES.find(x=>x.name===nm);if(!ex)return;
     const nSets=(sets[p.id]||[]).length||3;
     [...ex.p,...ex.s].forEach(({m,p:pct})=>{load[m]=(load[m]||0)+nSets*(pct/100);});});
   return load;
@@ -645,6 +645,13 @@ export default function App(){
   const[eccEnabled,setEccEnabled]=useState(()=>{sv(SK.eccentrix,false);return false;});
   const[powerEnabled,setPowerEnabled]=useState(()=>{sv(SK.power,false);return false;});
   const[setup,setSetup]=useState(false);
+  const[anchorCfg,setAnchorCfg]=useState(()=>ld(SK.anchorcfg,{mode:"default",slots:[]}));
+  const activeSlots=useMemo(()=>{
+    if(anchorCfg.mode==="custom"&&Array.isArray(anchorCfg.slots)&&anchorCfg.slots.length>=1){
+      return anchorCfg.slots.map(s=>{const t=PATTERNS.find(p=>p.id===s.type)||PATTERNS[0];return{id:s.id,type:s.type,label:t.label,full:t.full,muscles:t.muscles};});
+    }
+    return PATTERNS.map(p=>({...p,type:p.id}));   // default = the fixed 6, ids unchanged (behavior-preserving)
+  },[anchorCfg]);
   const[dayTargets,setDayTargets]=useState(()=>ld(SK.daytargets,Array.from({length:7},()=>({cal:2400,pro:190,carb:208,fat:90}))));
   const[logDate,setLogDate]=useState(()=>new Date().toISOString().slice(0,10));
   const[showTgtEd,setShowTgtEd]=useState(false);
@@ -654,7 +661,7 @@ export default function App(){
   const[sessionMode,setSessionMode]=useState("full");
   const[quickExs,setQuickExs]=useState([]);
 
-  const allSet=PATTERNS.every(p=>anchors[p.id]);
+  const allSet=activeSlots.every(p=>anchors[p.id]);
   const mesoState=getMesoState(meso);
   const weekVol=useMemo(()=>calcWeeklyVolume(anchorLog,accLog),[anchorLog,accLog]);
   const today=new Date().toISOString().slice(0,10);
@@ -665,7 +672,7 @@ export default function App(){
 
   const initSession=useCallback(()=>{
     const sets={};const isDeload=mesoState.phase==="deload";
-    PATTERNS.forEach(p=>{
+    activeSlots.forEach(p=>{
       if(!anchors[p.id])return;
       const prog=getProgression(anchors[p.id],anchorLog,[6,10],2,latestBW,powerEnabled);
       const n=setTarget(anchors[p.id],anchorLog,[6,10],2,mesoState.phase);
@@ -694,7 +701,7 @@ export default function App(){
     setAnchorSets(sets);
     const recentNames=[...new Set((accLog||[]).slice(-3).flatMap(e=>(e.exercises||[]).map(x=>x.name)))];
     const accRange=[[8,12],[12,15],[15,20]][((accLog&&accLog.length)||0)%3];
-    setAccs(genAcc(accCount,banned,prefs,fatigue,weekVol,anchorMuscleLoad(anchors,sets),recentNames,accRange,[],isDeload));
+    setAccs(genAcc(accCount,banned,prefs,fatigue,weekVol,anchorMuscleLoad(anchors,sets,activeSlots),recentNames,accRange,[],isDeload));
   },[anchors,anchorLog,accCount,banned,prefs,fatigue,weekVol,mesoState.phase,latestBW,accLog,eccEnabled,powerEnabled]);
 
   useEffect(()=>{if(allSet&&!setup)initSession();},[allSet,setup,powerEnabled,eccEnabled]);
@@ -708,7 +715,7 @@ export default function App(){
   const togLock=useCallback(id=>setAccs(p=>p.map(a=>a.id===id?{...a,locked:!a.locked}:a)),[]);
   const toggleBan=useCallback(name=>{setBanned(p=>{const n=p.includes(name)?p.filter(x=>x!==name):[...p,name];sv(SK.banned,n);return n;});setAccs(p=>p.filter(a=>a.name!==name));},[]);
   const rerollAcc=useCallback(()=>{const locked=accs.filter(a=>a.locked);const isDeload=mesoState.phase==="deload";
-    const seed=anchorMuscleLoad(anchors,anchorSets);
+    const seed=anchorMuscleLoad(anchors,anchorSets,activeSlots);
     locked.forEach(a=>[...a.p,...a.s].forEach(({m,p:pct})=>{seed[m]=(seed[m]||0)+(a.sets.length)*(pct/100);}));
     const recentNames=[...new Set((accLog||[]).slice(-3).flatMap(e=>(e.exercises||[]).map(x=>x.name)))];
     const accRange=[[8,12],[12,15],[15,20]][((accLog&&accLog.length)||0)%3];
@@ -722,7 +729,7 @@ export default function App(){
       const locked=prev.filter(a=>a.locked);
       if(locked.some(a=>a.name===name))return prev;
       const newLocked=[...locked,buildAcc(ex,accProg,accRange,latestBW,isDeload,true)];
-      const seed=anchorMuscleLoad(anchors,anchorSets);
+      const seed=anchorMuscleLoad(anchors,anchorSets,activeSlots);
       newLocked.forEach(a=>[...a.p,...a.s].forEach(({m,p:pct})=>{seed[m]=(seed[m]||0)+(a.sets.length)*(pct/100);}));
       const recentNames=[...new Set((accLog||[]).slice(-3).flatMap(e=>(e.exercises||[]).map(x=>x.name)))];
       const fill=genAcc(Math.max(0,accCount-newLocked.length),banned,prefs,fatigue,weekVol,seed,recentNames,accRange,newLocked.map(a=>a.name),isDeload);
@@ -733,7 +740,7 @@ export default function App(){
 
   const saveSession=useCallback(()=>{
     const newAL={...anchorLog};
-    PATTERNS.forEach(p=>{
+    activeSlots.forEach(p=>{
       if(!anchors[p.id]||!anchorSets[p.id])return;
       const logged=anchorSets[p.id].filter(s=>s.reps||s.ecc);if(!logged.length)return;
       const nm=anchors[p.id];if(!newAL[nm])newAL[nm]=[];
@@ -750,7 +757,7 @@ export default function App(){
       if(accProg[a.name].length>20)accProg[a.name]=accProg[a.name].slice(-20);
     });sv(SK.accLog+"_prog",accProg);
     const nf={...fatigue};
-    PATTERNS.forEach(p=>{
+    activeSlots.forEach(p=>{
       const sets=anchorSets[p.id]||[];
       const pains=sets.filter(s=>s.pain!=null&&s.pain!=="").map(s=>+s.pain);
       if(pains.length){const avg=pains.reduce((a,b)=>a+b,0)/pains.length;
@@ -760,7 +767,7 @@ export default function App(){
     if(!meso.startDate){const nm={startDate:new Date().toISOString(),length:5};setMeso(nm);sv(SK.meso,nm);}
     const duration=sessionStart?Math.round((Date.now()-sessionStart)/60000):null;
     const histEntry={date:new Date().toISOString(),mode:sessionMode,durationMin:duration,
-      anchors:Object.fromEntries(PATTERNS.map(p=>[p.id,{name:anchors[p.id],sets:anchorSets[p.id]||[]}])),
+      anchors:Object.fromEntries(activeSlots.map(p=>[p.id,{name:anchors[p.id],sets:anchorSets[p.id]||[]}])),
       accessories:accEntry.exercises};
     const histArr=[...sessHist,histEntry].slice(-50);
     setSessHist(histArr);sv(SK.history,histArr);
@@ -804,7 +811,7 @@ export default function App(){
   // ── PHASE 4: insight series + correlations ──
   const weeklyAgg=useMemo(()=>{
     const strW={};
-    PATTERNS.forEach(p=>{const nm=anchors[p.id];if(!nm)return;const h=anchorLog[nm];if(!h||!h.length)return;
+    activeSlots.forEach(p=>{const nm=anchors[p.id];if(!nm)return;const h=anchorLog[nm];if(!h||!h.length)return;
       const ex=EXERCISES.find(x=>x.name===nm);const bw=!!ex?.bw;
       const val=e=>{if(bw){const ss=e.sets.filter(s=>s.reps);return ss.length?ss.reduce((a,s)=>a+(+s.reps),0)/ss.length:0;}const b=e.sets.filter(s=>s.weight&&s.reps).sort((a,b)=>(b.weight*b.reps)-(a.weight*a.reps))[0];return b?b.weight*(1+b.reps/30):0;};
       const base=val(h[0]);if(!base)return;
@@ -883,10 +890,10 @@ export default function App(){
 
       {!allSet||setup?<>
         <div className="eyebrow"><span style={{color:C.arc}}>{allSet?"Change anchors · pick, then Done":"Select 6 anchors"}</span>{allSet&&setup&&<button className="btn-ghost act" onClick={()=>setSetup(false)}>Done</button>}</div>
-        {PATTERNS.map(p=><div key={p.id} className="card plate">
+        {activeSlots.map(p=><div key={p.id} className="card plate">
           <div className="pat-eyebrow">{p.full}</div>
           <div className="pillwrap">
-            {(PATTERN_MAP[p.id]||[]).filter(n=>!banned.includes(n)).map(name=>(
+            {(PATTERN_MAP[p.type]||[]).filter(n=>!banned.includes(n)).map(name=>(
               <button key={name} className={`pill${anchors[p.id]===name?" on":""}`} onClick={()=>selAnchor(p.id,name)}>{name}</button>))}
           </div>
         </div>)}
@@ -931,7 +938,7 @@ export default function App(){
         </>}
 
         {sessionMode==="full"&&<>
-          {PATTERNS.map(p=>{
+          {activeSlots.map(p=>{
             if(!anchors[p.id])return null;
             const prog=getProgression(anchors[p.id],anchorLog,[6,10],2,latestBW,powerEnabled);
             const sets=anchorSets[p.id]||[];
@@ -1139,7 +1146,7 @@ export default function App(){
 
       <div className="eyebrow"><span style={{color:C.arc}}>Strength index</span></div>
       {(()=>{const wkRatios={};
-        PATTERNS.forEach(p=>{const nm=anchors[p.id];if(!nm)return;const h=anchorLog[nm];if(!h||!h.length)return;
+        activeSlots.forEach(p=>{const nm=anchors[p.id];if(!nm)return;const h=anchorLog[nm];if(!h||!h.length)return;
           const ex=EXERCISES.find(x=>x.name===nm);const bw=!!ex?.bw;
           const val=e=>{if(bw){const ss=e.sets.filter(s=>s.reps);return ss.length?ss.reduce((a,s)=>a+(+s.reps),0)/ss.length:0;}const b=e.sets.filter(s=>s.weight&&s.reps).sort((a,b)=>(b.weight*b.reps)-(a.weight*a.reps))[0];return b?b.weight*(1+b.reps/30):0;};
           const base=val(h[0]);if(!base)return;
@@ -1156,7 +1163,7 @@ export default function App(){
         </div>;})()}
 
       <div className="eyebrow"><span style={{color:C.arc}}>Anchor progression</span></div>
-      {PATTERNS.map(p=>{
+      {activeSlots.map(p=>{
         const nm=anchors[p.id];if(!nm)return null;const h=anchorLog[nm];
         if(!h||!h.length)return<div key={p.id} className="sub" style={{marginBottom:6}}>{p.label} · {nm} — no data yet</div>;
         const ents=h.slice(-10);
@@ -1187,7 +1194,7 @@ export default function App(){
       <div className="eyebrow"><span style={{color:C.arc}}>Weekly tonnage</span></div>
       {(()=>{const bwAt=date=>{const wd=bodyData.filter(e=>e.weight);if(!wd.length)return 0;let best=wd[0];for(const e of wd){if(e.date<=date)best=e;else break;}return +best.weight||0;};
         const tByWeek={};
-        PATTERNS.forEach(p=>{const nm=anchors[p.id];if(!nm)return;const h=anchorLog[nm];if(!h)return;const ex=EXERCISES.find(x=>x.name===nm);const isBw=!!ex?.bw;
+        activeSlots.forEach(p=>{const nm=anchors[p.id];if(!nm)return;const h=anchorLog[nm];if(!h)return;const ex=EXERCISES.find(x=>x.name===nm);const isBw=!!ex?.bw;
           h.forEach(e=>{const w=weekStart(e.date);const bodyW=isBw?bwAt(e.date):0;let ton=0;e.sets.forEach(s=>{const reps=+s.reps||0;const wt=(+s.weight||0)+bodyW;ton+=reps*wt;});if(ton>0)tByWeek[w]=(tByWeek[w]||0)+ton;});});
         const weeks=Object.keys(tByWeek).sort().slice(-8);if(!weeks.length)return<div className="empty">No anchor data yet</div>;
         const tons=weeks.map(w=>Math.round(tByWeek[w]));const tmax=Math.max(...tons,1);
