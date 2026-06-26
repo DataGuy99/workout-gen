@@ -316,24 +316,34 @@ function getProgression(name,log,repRange=[6,10],targetRIR=2,bodyWeight=0,powerM
   if(h.length>=3){
     const recent3=h.slice(-3);
     const vols=recent3.map(s=>{const ss=s.sets.filter(x=>x.reps&&x.weight);return ss.reduce((a,x)=>a+(+x.reps)*(+x.weight),0);});
-    if(vols[2]<vols[0]*0.9&&vols[1]<vols[0]*0.95)
-      return{weight:r5(top*0.7),reps:repRange[0],sets:ls.length,note:`Performance dropped 3 sessions. Cut to 70% (${r5(top*0.7)}lb) for 1 week.`,deload:true,ramp};
+    const lr=last.sets.map(s=>s.rir!=null&&s.rir!==""?+s.rir:null).filter(r=>r!=null);
+    const lastMinRir=lr.length?Math.min(...lr):99;   // high RIR = under-loading / a correction, not fatigue
+    if(vols[2]<vols[0]*0.9&&vols[1]<vols[0]*0.95&&lastMinRir<=1)
+      return{weight:r5(top*0.7),reps:repRange[0],sets:ls.length,note:`Grinding and dropping 3 sessions. Cut to 70% (${r5(top*0.7)}lb) for a week.`,deload:true,ramp};
   }
-  const rs=ls.filter(s=>s.rir!=null&&s.rir!==""); // sets with RIR logged
-  if(!rs.length){ // no RIR → can't gauge effort; hold top load, nudge reps
-    const avgR=Math.round(ls.reduce((s,x)=>s+(+x.reps),0)/ls.length);
-    return{weight:top,reps:Math.min(avgR+1,repRange[1]),sets:ls.length,note:`No RIR logged. Hold ${top}lb, target ${Math.min(avgR+1,repRange[1])}r.`,ramp};
+  // ── DOUBLE PROGRESSION ── climb reps within the range at a fixed load, then add load & reset reps.
+  const wsets=ls.filter(s=>+s.weight===top);                 // working sets at the heaviest load
+  const wReps=Math.max(...wsets.map(s=>+s.reps));            // best reps achieved at that load
+  const wr=wsets.map(s=>s.rir!=null&&s.rir!==""?+s.rir:null).filter(r=>r!=null);
+  const wRir=wr.length?Math.min(...wr):null;                 // hardest effort at that load (null = no RIR)
+  const inc=top>=100?10:5;                                    // load step
+  // (a) load far too light → jump load so the CURRENT reps land at target RIR
+  if(wRir!=null&&wRir>=targetRIR+3){
+    const e=Math.round(top*(1+(wReps+wRir)/30));const nw=r5(e/(1+(wReps+targetRIR)/30));
+    if(nw>top)return{weight:nw,reps:wReps,sets:ls.length,note:`${wReps}r @ RIR ${wRir} — too light. Jump to ${nw}lb for ${wReps}r @ RIR ${targetRIR}.`,progressed:true,ramp};
   }
-  let num=0,den=0;
-  rs.forEach(s=>{const rtf=(+s.reps)+(+s.rir);const e=(+s.weight)*(1+rtf/30);const rel=1/(1+(+s.rir));num+=e*rel;den+=rel;});
-  const e1rm=Math.round(num/den);
-  const tw=r5(e1rm/(1+(repRange[0]+targetRIR)/30)); // weight for bottom-of-range @ target RIR
-  const base={reps:repRange[0],sets:ls.length,ramp};
-  if(tw>top)
-    return{weight:tw,note:`e1RM ${e1rm} from ${rs.length} sets. Up to ${tw}lb for ${repRange[0]}r @ RIR ${targetRIR}.`,progressed:true,...base};
-  if(tw<top-2)
-    return{weight:tw,note:`e1RM ${e1rm} from ${rs.length} sets. Pull back to ${tw}lb for ${repRange[0]}r @ RIR ${targetRIR}.`,tooHard:true,...base};
-  return{weight:tw,note:`e1RM ${e1rm} from ${rs.length} sets. Hold ${tw}lb for ${repRange[0]}r @ RIR ${targetRIR}.`,...base};
+  // (b) room left in the range → add one rep at the same load
+  if(wReps<repRange[1]&&(wRir==null||wRir>=1)){
+    const nr=wReps+1;
+    return{weight:top,reps:nr,sets:ls.length,note:`${wReps}r @ ${top}lb${wRir!=null?` · RIR ${wRir}`:""} — add a rep → ${nr}r, same load.`,progressed:true,ramp};
+  }
+  // (c) topped the range with reps to spare → add load, reset to bottom of range
+  if(wReps>=repRange[1]&&(wRir==null||wRir>=targetRIR)){
+    const nw=r5(top+inc);
+    return{weight:nw,reps:repRange[0],sets:ls.length,note:`${wReps}r @ ${top}lb — top of range. Add load → ${nw}lb for ${repRange[0]}r.`,progressed:true,ramp};
+  }
+  // (d) topped reps but hard, or failed mid-range → hold and consolidate
+  return{weight:top,reps:Math.min(wReps,repRange[1]),sets:ls.length,note:`Hold ${top}lb for ${Math.min(wReps,repRange[1])}r until RIR ${targetRIR}+.`,ramp};
 }
 
 // ── VOLUME ──
@@ -733,7 +743,7 @@ export default function App(){
     const sets={};const isDeload=mesoState.phase==="deload";
     activeSlots.forEach(p=>{
       if(!anchors[p.id])return;
-      const prog=getProgression(anchors[p.id],anchorLog,[6,10],2,latestBW,powerEnabled);
+      const prog=getProgression(anchors[p.id],anchorLog,[6,12],2,latestBW,powerEnabled);
       const n=setTarget(anchors[p.id],anchorLog,[6,10],2,mesoState.phase);
       const ex0=EXERCISES.find(x=>x.name===anchors[p.id])||{};
       let baseW=prog.weight;
@@ -1031,7 +1041,7 @@ export default function App(){
         {sessionMode==="full"&&<>
           {activeSlots.map(p=>{
             if(!anchors[p.id])return null;
-            const prog=getProgression(anchors[p.id],anchorLog,[6,10],2,latestBW,powerEnabled);
+            const prog=getProgression(anchors[p.id],anchorLog,[6,12],2,latestBW,powerEnabled);
             const sets=anchorSets[p.id]||[];
             const hasPain=sets.some(s=>s.pain!=null&&s.pain!==""&&+s.pain>=6);
             const stripe=hasPain?C.alarm:prog.deload?C.alarm:prog.progressed?C.go:C.arc;
