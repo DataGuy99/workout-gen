@@ -402,6 +402,29 @@ function cadencePace(anchorLog,accLog,lookbackWeeks,todayStr){
     let cum=0;for(let d=0;d<=todayWd;d++)cum+=dist[d];pace[m]=cum/tot;});
   return pace;
 }
+// Per-muscle LOAD trend: tonnage (reps*weight*involvement) of the last COMPLETED week vs the
+// prior completed week. Stable — ignores the current partial week, so it won't fight the pace
+// color. Bodyweight work (no external load) contributes no tonnage. Returns up/flat/down/null.
+function muscleLoadTrend(anchorLog,accLog,todayStr){
+  const curWk=weekStart(todayStr);
+  const byWk={};MUSCLES.forEach(m=>byWk[m]={});
+  const add=(dateStr,name,sets)=>{
+    const ref=EXERCISES.find(x=>x.name===name);if(!ref)return;
+    const wk=weekStart(dateStr);if(wk>=curWk)return;
+    let ton=0;(sets||[]).forEach(s=>{if(s.reps&&s.weight)ton+=(+s.reps)*(+s.weight);});
+    if(!ton)return;
+    [...ref.p,...ref.s].forEach(({m,p})=>{if(byWk[m])byWk[m][wk]=(byWk[m][wk]||0)+ton*(p/100);});
+  };
+  Object.entries(anchorLog).forEach(([name,entries])=>(entries||[]).forEach(e=>add(e.date,name,e.sets)));
+  (accLog||[]).forEach(e=>(e.exercises||[]).forEach(x=>add(e.date,x.name,x.sets)));
+  const trend={};
+  MUSCLES.forEach(m=>{const wks=Object.keys(byWk[m]).sort();
+    if(wks.length<2){trend[m]=null;return;}
+    const a=byWk[m][wks[wks.length-2]],b=byWk[m][wks[wks.length-1]];
+    if(!a){trend[m]=null;return;}
+    const r=b/a;trend[m]=r>1.05?"up":r<0.95?"down":"flat";});
+  return trend;
+}
 
 // ── MESOCYCLE ──
 function getMesoState(meso){
@@ -643,7 +666,7 @@ function SetRow({set,i,onUp,onRm,showPain,isHold,showEcc,showPwr,win=POWER_WINDO
   </div>);
 }
 
-function VolDash({weekVol,pace}){
+function VolDash({weekVol,pace,trend}){
   const main=["chest","back","shoulders","quads","hamstrings","glutes","biceps","triceps"];
   return(<div className="card" style={{padding:"12px 12px 8px"}}>
     <div style={{fontFamily:disp,fontWeight:700,fontSize:12,letterSpacing:2.5,color:C.steel,textTransform:"uppercase",marginBottom:9}}>Weekly volume · hard sets</div>
@@ -669,7 +692,7 @@ function VolDash({weekVol,pace}){
           <div className="vol-fill" style={{width:`${pct}%`,background:c}}/>
           {paceLeft!=null&&v<lm.mev&&<div title="on-pace marker" style={{position:"absolute",left:`${paceLeft}%`,top:-1,bottom:-1,width:2,background:C.bone,opacity:0.85,borderRadius:1}}/>}
         </div>
-        <div className="vol-val" style={{color:c}}>{v} {label}</div>
+        <div className="vol-val" style={{color:c}}>{v} {label}{trend&&trend[m]&&<span style={{marginLeft:5,fontSize:11,color:trend[m]==="up"?C.go:trend[m]==="down"?C.warn:C.dim}} title={`load ${trend[m]} vs last wk`}>{trend[m]==="up"?"↑":trend[m]==="down"?"↓":"→"}</span>}</div>
       </div>);
     })}
   </div>);
@@ -733,6 +756,7 @@ export default function App(){
   const weekVol=useMemo(()=>calcWeeklyVolume(anchorLog,accLog),[anchorLog,accLog]);
   const today=new Date().toISOString().slice(0,10);
   const pace=useMemo(()=>cadencePace(anchorLog,accLog,paceLookback,today),[anchorLog,accLog,paceLookback,today]);
+  const loadTrend=useMemo(()=>muscleLoadTrend(anchorLog,accLog,today),[anchorLog,accLog,today]);
   const dow=new Date(logDate+"T00:00:00").getDay();
   const targets=dayTargets[dow]||{cal:2400,pro:190,carb:208,fat:90};
   const dayNut=nutrition.filter(d=>d.date===logDate);
@@ -942,7 +966,7 @@ export default function App(){
         </div>
       </div>}
 
-      <VolDash weekVol={weekVol} pace={pace}/>
+      <VolDash weekVol={weekVol} pace={pace} trend={loadTrend}/>
 
       <div style={{display:"flex",gap:8,alignItems:"center",margin:"0 0 10px",flexWrap:"wrap"}}>
         <span style={{fontFamily:mono,fontSize:10,color:C.steel}}>eccentric-assisted BW progression</span>
@@ -1305,7 +1329,7 @@ export default function App(){
           <div className="bars">{tons.map((v,i)=><div key={i} className="bar" style={{height:`${Math.max((v/tmax)*100,8)}%`,background:i===tons.length-1?C.arc:`${C.arc}55`}}/>)}</div>
         </div>;})()}
 
-      <VolDash weekVol={weekVol} pace={pace}/>
+      <VolDash weekVol={weekVol} pace={pace} trend={loadTrend}/>
 
       <div className="eyebrow"><span style={{color:C.amber}}>Training volume</span></div>
       {(()=>{const wk={};
