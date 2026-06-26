@@ -219,8 +219,7 @@ const POWER_INC=5;       // lb added next session when target is met
 // For bw-tagged exercises: load is fixed (bodyweight + any added), progress by
 // reps (or seconds for holds). Reads sets by reps only, never the weight filter.
 // Returns the same 9-key shape as C; weight:"" so cards/gen show no lb target.
-function bwProgression(ex,last,repRange,targetRIR,bodyWeight){
-  const eccOn=ld(SK.eccentrix,true);
+function bwProgression(ex,last,repRange,targetRIR,bodyWeight,eccOn=false){
   const isHold=!!ex.hold;
   const ls=last.sets.filter(s=>eccOn?(s.reps||s.ecc):s.reps);
   if(!ls.length)return{weight:"",reps:repRange[0],sets:3,note:`First session. ${isHold?"Hold for time":`Hit ${repRange[0]} reps`} @ RIR ${targetRIR}.`,isNew:true,ramp:null};
@@ -294,13 +293,13 @@ function powerProg(name,log){
   const top=Math.max(...ls.map(s=>+s.weight));const w=r5(top*0.6);
   return{weight:w,reps:POWER_REPS,sets:3,win:POWER_WINDOW,power:true,note:`Power start: ~${w}lb (60% of ${top}), ${POWER_REPS} fast reps in ${POWER_WINDOW}s.`};
 }
-function getProgression(name,log,repRange=[6,10],targetRIR=2,bodyWeight=0,powerMode=false){
+function getProgression(name,log,repRange=[6,10],targetRIR=2,bodyWeight=0,powerMode=false,eccOn=false){
   const h=log[name];
   const exDef=EXERCISES.find(x=>x.name===name);
   if(powerMode&&!(exDef&&exDef.bw))return powerProg(name,log);   // loaded power routes first (handles first session internally)
   if(!h||!h.length)return{weight:"",reps:repRange[0],sets:3,note:`First session. Find weight for ${repRange[0]} reps @ RIR ${targetRIR}.`,isNew:true};
   const last=h[h.length-1];
-  if(exDef&&exDef.bw)return bwProgression(exDef,last,repRange,targetRIR,bodyWeight);
+  if(exDef&&exDef.bw)return bwProgression(exDef,last,repRange,targetRIR,bodyWeight,eccOn);
   const ls=last.sets.filter(s=>s.reps&&s.weight);
   if(!ls.length)return{weight:"",reps:repRange[0],sets:3,note:"No data last session.",isNew:true,ramp:null};
   // ── PROGRESSION MODEL C: weighted e1RM across ALL sets ──
@@ -335,7 +334,7 @@ function getProgression(name,log,repRange=[6,10],targetRIR=2,bodyWeight=0,powerM
   // (b) room left in the range → add one rep at the same load
   if(wReps<repRange[1]&&(wRir==null||wRir>=1)){
     const nr=wReps+1;
-    return{weight:top,reps:nr,sets:ls.length,note:`${wReps}r @ ${top}lb${wRir!=null?` · RIR ${wRir}`:""} — add a rep → ${nr}r, same load.`,progressed:true,ramp};
+    return{weight:top,reps:nr,sets:ls.length,note:`${wReps}r @ ${top}lb${wRir!=null?` · RIR ${wRir}`:""} — add a rep → ${nr}r, same load.`,progressed:true,repUp:true,ramp};
   }
   // (c) topped the range with reps to spare → add load, reset to bottom of range
   if(wReps>=repRange[1]&&(wRir==null||wRir>=targetRIR)){
@@ -695,7 +694,7 @@ export default function App(){
   const[sessHist,setSessHist]=useState(()=>ld(SK.history,[]));
   const[editDur,setEditDur]=useState(null);const[editDurVal,setEditDurVal]=useState("");
   const[metGoal,setMetGoal]=useState(()=>ld(SK.metgoal,40));
-  const[eccEnabled,setEccEnabled]=useState(()=>{sv(SK.eccentrix,false);return false;});
+  const[eccBySlot,setEccBySlot]=useState({});   // per-exercise eccentric, in-memory (resets each session)
   const[powerEnabled,setPowerEnabled]=useState(()=>{sv(SK.power,false);return false;});
   const[setup,setSetup]=useState(false);
   const[anchorCfg,setAnchorCfg]=useState(()=>ld(SK.anchorcfg,{mode:"default",slots:[]}));
@@ -771,9 +770,9 @@ export default function App(){
     const recentNames=[...new Set((accLog||[]).slice(-3).flatMap(e=>(e.exercises||[]).map(x=>x.name)))];
     const accRange=[[8,12],[12,15],[15,20]][((accLog&&accLog.length)||0)%3];
     setAccs(genAcc(accCount,banned,prefs,fatigue,weekVol,anchorMuscleLoad(anchors,sets,activeSlots),recentNames,accRange,[],isDeload));
-  },[anchors,anchorLog,accCount,banned,prefs,fatigue,weekVol,mesoState.phase,latestBW,accLog,eccEnabled,powerEnabled]);
+  },[anchors,anchorLog,accCount,banned,prefs,fatigue,weekVol,mesoState.phase,latestBW,accLog,powerEnabled]);
 
-  useEffect(()=>{if(allSet&&!setup)initSession();},[allSet,setup,powerEnabled,eccEnabled]);
+  useEffect(()=>{if(allSet&&!setup)initSession();},[allSet,setup,powerEnabled]);
 
   const updAS=useCallback((pid,idx,f,v)=>setAnchorSets(p=>({...p,[pid]:p[pid].map((s,i)=>i===idx?{...s,[f]:v}:s)})),[]);
   const rmAS=useCallback((pid,idx)=>setAnchorSets(p=>({...p,[pid]:p[pid].filter((_,i)=>i!==idx)})),[]);
@@ -788,7 +787,7 @@ export default function App(){
     locked.forEach(a=>[...a.p,...a.s].forEach(({m,p:pct})=>{seed[m]=(seed[m]||0)+(a.sets.length)*(pct/100);}));
     const recentNames=[...new Set((accLog||[]).slice(-3).flatMap(e=>(e.exercises||[]).map(x=>x.name)))];
     const accRange=[[8,12],[12,15],[15,20]][((accLog&&accLog.length)||0)%3];
-    const newAccs=genAcc(accCount-locked.length,banned,prefs,fatigue,weekVol,seed,recentNames,accRange,locked.map(a=>a.name),isDeload);setAccs([...locked,...newAccs]);},[accs,accCount,banned,prefs,fatigue,weekVol,anchors,anchorSets,accLog,mesoState.phase,eccEnabled]);
+    const newAccs=genAcc(accCount-locked.length,banned,prefs,fatigue,weekVol,seed,recentNames,accRange,locked.map(a=>a.name),isDeload);setAccs([...locked,...newAccs]);},[accs,accCount,banned,prefs,fatigue,weekVol,anchors,anchorSets,accLog,mesoState.phase]);
   const addAccByName=useCallback((name)=>{
     const ex=EXERCISES.find(x=>x.name===name);if(!ex)return;
     const isDeload=mesoState.phase==="deload";
@@ -946,8 +945,6 @@ export default function App(){
       <VolDash weekVol={weekVol} pace={pace}/>
 
       <div style={{display:"flex",gap:8,alignItems:"center",margin:"0 0 10px",flexWrap:"wrap"}}>
-        <span style={{fontFamily:mono,fontSize:11,color:C.dim,flexShrink:0}}>ECCENTRIC</span>
-        <button className={`daytype${eccEnabled?" on":""}`} style={{flex:0,padding:"0 12px",height:32}} onClick={()=>setEccEnabled(v=>{const n=!v;sv(SK.eccentrix,n);return n;})}>{eccEnabled?"ON":"OFF"}</button>
         <span style={{fontFamily:mono,fontSize:10,color:C.steel}}>eccentric-assisted BW progression</span>
       </div>
 
@@ -1041,11 +1038,11 @@ export default function App(){
         {sessionMode==="full"&&<>
           {activeSlots.map(p=>{
             if(!anchors[p.id])return null;
-            const prog=getProgression(anchors[p.id],anchorLog,[6,12],2,latestBW,powerEnabled);
+            const prog=getProgression(anchors[p.id],anchorLog,[6,12],2,latestBW,powerEnabled,!!eccBySlot[anchors[p.id]]);
             const sets=anchorSets[p.id]||[];
             const hasPain=sets.some(s=>s.pain!=null&&s.pain!==""&&+s.pain>=6);
             const stripe=hasPain?C.alarm:prog.deload?C.alarm:prog.progressed?C.go:C.arc;
-            const chip=prog.deload?{t:"DELOAD",c:C.alarm}:prog.progressed?{t:"LOAD UP",c:C.go}:prog.tooEasy?{t:"ADD REP",c:C.warn}:prog.tooHard?{t:"BACK OFF",c:C.alarm}:prog.isNew?{t:"NEW",c:C.steel}:{t:"TARGET",c:C.arc};
+            const chip=prog.deload?{t:"DELOAD",c:C.alarm}:prog.repUp?{t:"ADD REP",c:C.go}:prog.progressed?{t:"LOAD UP",c:C.go}:prog.tooHard?{t:"BACK OFF",c:C.alarm}:prog.isNew?{t:"NEW",c:C.steel}:{t:"TARGET",c:C.arc};
             const lastN=lastSetCount(anchors[p.id],anchorLog);const tgtN=setTarget(anchors[p.id],anchorLog,[6,10],2,mesoState.phase);const addedSet=lastN>0&&tgtN>lastN&&mesoState.phase!=="deload";
             return(<div key={p.id} className="card" style={{borderLeft:`3px solid ${stripe}`}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
@@ -1053,14 +1050,17 @@ export default function App(){
                   <div className="pat-eyebrow">{p.label}</div>
                   <div className="ex-name">{anchors[p.id]}</div>
                 </div>
-                {hasPain&&<div className="flag">RED PAIN</div>}
+                <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+                  {!!(EXERCISES.find(x=>x.name===anchors[p.id])||{}).bw&&!(EXERCISES.find(x=>x.name===anchors[p.id])||{}).hold&&<button className={`daytype${eccBySlot[anchors[p.id]]?" on":""}`} style={{flex:0,padding:"0 9px",height:26,fontSize:10}} onClick={()=>setEccBySlot(m=>({...m,[anchors[p.id]]:!m[anchors[p.id]]}))} title="Eccentric-assisted reps for this exercise">ECC {eccBySlot[anchors[p.id]]?"ON":"OFF"}</button>}
+                  {hasPain&&<div className="flag">RED PAIN</div>}
+                </div>
               </div>
               <div className="readout">
                 <span className="chip" style={{color:chip.c,background:`${chip.c}1c`,border:`1px solid ${chip.c}44`}}>{chip.t}</span>
                 {addedSet&&<span className="chip" style={{color:C.go,background:`${C.go}1c`,border:`1px solid ${C.go}44`}}>+1 SET → {tgtN}</span>}
                 <p>{prog.note}{prog.weight?<span className="tgt"> → {prog.reps}r × {prog.weight}lb</span>:null}</p>
               </div>
-              {sets.map((s,i)=><SetRow key={i} set={s} i={i} showPain={p.id==="squat"||p.id==="hinge"} isHold={!!(EXERCISES.find(x=>x.name===anchors[p.id])||{}).hold} showEcc={(()=>{const e=EXERCISES.find(x=>x.name===anchors[p.id])||{};return !!e.bw&&!e.hold&&eccEnabled;})()} showPwr={(()=>{const e=EXERCISES.find(x=>x.name===anchors[p.id])||{};return powerEnabled&&!e.hold;})()} win={prog.win||POWER_WINDOW}
+              {sets.map((s,i)=><SetRow key={i} set={s} i={i} showPain={p.id==="squat"||p.id==="hinge"} isHold={!!(EXERCISES.find(x=>x.name===anchors[p.id])||{}).hold} showEcc={(()=>{const e=EXERCISES.find(x=>x.name===anchors[p.id])||{};return !!e.bw&&!e.hold&&!!eccBySlot[anchors[p.id]];})()} showPwr={(()=>{const e=EXERCISES.find(x=>x.name===anchors[p.id])||{};return powerEnabled&&!e.hold;})()} win={prog.win||POWER_WINDOW}
                 onUp={(idx,f,v)=>updAS(p.id,idx,f,v)} onRm={idx=>rmAS(p.id,idx)}/>)}
               <button className="addset" onClick={()=>addAS(p.id)}>+ set</button>
             </div>);
@@ -1085,13 +1085,14 @@ export default function App(){
                 {a.sugWeight&&<div className="sub" style={{color:C.amber}}>Suggest {a.sugReps}r × {a.sugWeight}lb</div>}
               </div>
               <div style={{display:"flex",alignItems:"center",gap:10,flexShrink:0}}>
+                {!!(EXERCISES.find(x=>x.name===a.name)||{}).bw&&!(EXERCISES.find(x=>x.name===a.name)||{}).hold&&<button className={`daytype${eccBySlot[a.name]?" on":""}`} style={{flex:0,padding:"0 8px",height:24,fontSize:9}} onClick={()=>setEccBySlot(m=>({...m,[a.name]:!m[a.name]}))} title="Eccentric reps for this exercise">ECC</button>}
                 <Stars value={prefs[a.name]||0} onChange={v=>{setPrefs(p=>{const n={...p,[a.name]:v};sv(SK.prefs,n);return n;});}}/>
                 <button onClick={()=>toggleBan(a.name)} title="Ban from rotation" style={{fontFamily:mono,fontSize:11,background:"none",border:"none",cursor:"pointer",color:C.dim,padding:4,letterSpacing:1}}>ban</button>
                 <button onClick={()=>togLock(a.id)} title={a.locked?"Locked":"Lock"} style={{fontFamily:mono,fontSize:11,background:"none",border:"none",cursor:"pointer",color:a.locked?C.amber:C.line,padding:4,letterSpacing:1}}>{a.locked?"LOCK":"lock"}</button>
               </div>
             </div>
             <div style={{marginTop:4}}>
-              {a.sets.map((s,i)=><SetRow key={i} set={s} i={i} showPain={false} isHold={!!(EXERCISES.find(x=>x.name===a.name)||{}).hold} showEcc={(()=>{const e=EXERCISES.find(x=>x.name===a.name)||{};return !!e.bw&&!e.hold&&eccEnabled;})()} showPwr={(()=>{const e=EXERCISES.find(x=>x.name===a.name)||{};return powerEnabled&&!e.hold;})()}
+              {a.sets.map((s,i)=><SetRow key={i} set={s} i={i} showPain={false} isHold={!!(EXERCISES.find(x=>x.name===a.name)||{}).hold} showEcc={(()=>{const e=EXERCISES.find(x=>x.name===a.name)||{};return !!e.bw&&!e.hold&&!!eccBySlot[a.name];})()} showPwr={(()=>{const e=EXERCISES.find(x=>x.name===a.name)||{};return powerEnabled&&!e.hold;})()}
                 onUp={(idx,f,v)=>updAcc(a.id,idx,f,v)} onRm={idx=>rmAcc(a.id,idx)}/>)}
             </div>
             <button className="addset" onClick={()=>addAccSet(a.id)}>+ set</button>
