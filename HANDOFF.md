@@ -102,13 +102,27 @@ composition verdict flags a fat-gain/recomp pattern.
 
 ---
 
-## 5. Done & deployed (latest commit `a1f918e`)
+## 5. Done & deployed (latest commit `71dbea6`)
+
+**Session 4 (2025-06-26) — all CI-green.** Double progression: reps climb 6→12 at a fixed load,
+then load bumps & resets to the floor; a too-light load (RIR ≥ target+3) recalibrates INTO the range
+— target reps are clamped to the ceiling, not kept above it (`99fb2dc`; clamp in `71dbea6`). RIR-gated
+deload — only fires on a genuine 3-session volume drop at RIR≤1, which killed the false DB-row deload.
+Anchor range widened 6→12. Per-exercise eccentric toggle replacing the global ON/OFF: in-memory
+`eccBySlot`, an ECC button on each BW non-hold card; the toggle now re-seeds reps + ecc on the live
+rows so they match the note (`ace69e4`; populate fix in `71dbea6`). MEV "hard sets" bar reworked to
+show TYPICAL weekly volume — the average of recent COMPLETE weeks — so it reads full/green for a
+consistent trainer instead of a low red stub early in the week; a tick marks this-week progress and a
+per-muscle load-trend arrow shows tonnage vs last week (`c4a2626`, `2ae3cb3`). NOTE: this average-bar
+approach SUPERSEDED the §8 pacing/cadence design — `cadencePace` + the pace constants were deleted as
+dead code, and the advanced "lookback" setting was repurposed from learning cadence to the average
+window.
 Since `d7f00f7`: Trends-audit fixes — MEV hard-sets chart switched from a drifting Date.now()
 rolling-7d window to the calendar week (`da25137`, also fixed the stray `$` in the POWER label
 and unified the hard-set RIR<=4 rule for accessories); Sunday-start weeks to match owner's Sun–Sat
 cycle (`a1f918e`). STILL OPEN from the audit: the two tonnage labels are swapped — section
 "Weekly Tonnage" shows subtitle "Anchor volume load" (anchors only) while "Training Volume" shows
-"Weekly tonnage" (anchors+accessories); relabel pending owner go.
+"Weekly tonnage" (anchors+accessories); now folded into the planned Lift-carousel + Trends consolidation (see Open follow-ups).
 **ROADMAP COMPLETE — all of §6 (6.1 power, 6.2 set-count, 6.3 custom anchors) shipped.**
 Session 3 (2025-06-23) also shipped, all CI-green: power timer on bodyweight rows
 (`7b135e9`); per-set editable power timer + expiry alarm (`274ecdb`); anchor-change Done
@@ -117,7 +131,15 @@ Strength Index (`19348ff`); power/eccentric toggle desync fix + new-anchor power
 (`1d0bc1c`); power+eccentric default OFF each session (`915bdd9`); dynamic activeSlots
 refactor (`89593c5`); custom-anchor configurator UI (`d7f00f7`).
 
-**Open follow-ups (optional):** custom-slot exercise picking uses curated PATTERN_MAP lists,
+**Open follow-ups (optional):** **[NEXT] Lift-carousel + Trends consolidation** — move all lift-only
+metrics (MEV bars, ONE tonnage chart, Strength Index, Anchor Progression) into a swipeable carousel on
+the LIFT page; strip them from TRENDS, leaving it a body/health overview (session history WITH
+per-session values, weight/measurement trends, cardio, cross-domain insights), optionally embedding the
+carousel mid-page. This one move resolves the swapped/duplicate tonnage charts, the MEV bar rendered on
+BOTH tabs, and the empty tonnage "box" cards. Fold in while there: drop the Insights ≥4-aligned-weeks
+gate (reads "insufficient" with only 2 weeks of data); add per-session values to history rows; the
+"Avg N min" session stat blends quick+full. Cardio/MET pace-or-average bars (see §8) still unbuilt.
+— Older items: custom-slot exercise picking uses curated PATTERN_MAP lists,
 not full-catalog-by-category; anchor load auto-seed copies raw lb across exercises (no
 per-implement vs total tagging); Power/Eccentric toggle regenerates the whole session
 (rerolls accessories incl. locked) — could scope to anchors-only; configurator reorder uses
@@ -230,6 +252,15 @@ keep them research-grounded). Power is DONE (`e45d84a`). Remaining build order: 
 
 ---
 
+## 8. SUPERSEDED — weekly pacing / encouragement bars
+**Superseded 2025-06-26.** The "<MEV = red early in the week" problem this spec targeted was solved
+instead by making the MEV bar show TYPICAL (average) weekly volume (`c4a2626`) — full/green for a
+consistent trainer, no pace/cadence machinery. `cadencePace` was built (`7653e8e`) then removed as
+dead code. The one genuinely unbuilt piece from this spec: **cardio/MET pace bars** (the spec applied
+to cardio too) — now an open design question; a cardio "typical/wk" average would mirror the MEV bar.
+Original spec kept below for reference only.
+
+### Original spec (reference only)
 ## 8. PROVISIONED — weekly pacing / encouragement bars (NOT YET BUILT, spec locked)
 Make the weekly bars (the MEV per-muscle "hard sets" chart + cardio + others) **pace-aware with
 encouraging color**, replacing today's static "<MEV = red" (which paints everything red early in
