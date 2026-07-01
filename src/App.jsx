@@ -181,6 +181,8 @@ function keytelCpm(hr,kg,age,sex){
     :(-55.0969+0.6309*hr+0.1988*kg+0.2017*age)/4.184;
   return Math.max(0,v);
 }
+// Format a duration in (fractional) minutes as H:MM:SS, or M:SS when under an hour.
+const fmtDur=min=>{const s=Math.round((+min||0)*60);const h=Math.floor(s/3600),m=Math.floor(s%3600/60),ss=s%60;return h>0?`${h}:${String(m).padStart(2,"0")}:${String(ss).padStart(2,"0")}`:`${m}:${String(ss).padStart(2,"0")}`;};
 // HR-zone metabolic cost, kcal/kg/hr for Z1..Z5. Zones are set against the user's OWN max HR on their
 // device, so intensity is already personalized; the same %HRmax costs ~the same METs across modalities
 // (HR reflects cardiovascular load), so one set covers rowing/steady/etc. Tunable.
@@ -944,12 +946,12 @@ export default function App(){
     setBW("");setBWa("");setBNa("");},[bW,bWa,bNa,today]);
   const delBody=useCallback(time=>{setBodyData(p=>{const n=p.filter(e=>e.time!==time);sv(SK.body,n);return n;});},[]);
   // Cardio
-  const[cType,setCType]=useState("steady");const[cDur,setCDur]=useState("");const[cHR,setCHR]=useState("");const[cConf,setCConf]=useState("");const[cDist,setCDist]=useState("");const[cZones,setCZones]=useState(["","","","",""]);const[cDate,setCDate]=useState(today);const[confirmClear,setConfirmClear]=useState(false);
+  const[cType,setCType]=useState("steady");const[cH,setCH]=useState("");const[cM,setCM]=useState("");const[cS,setCS]=useState("");const[cHR,setCHR]=useState("");const[cConf,setCConf]=useState("");const[cDist,setCDist]=useState("");const[cZones,setCZones]=useState(["","","","",""]);const[cDate,setCDate]=useState(today);const[confirmClear,setConfirmClear]=useState(false);
   const[profile,setProfile]=useState(()=>ld(SK.profile,{age:26,sex:"male"}));
   const setProf=(f,v)=>setProfile(p=>{const n={...p,[f]:f==="age"?(+v||0):v};sv(SK.profile,n);return n;});
-  const addCardio=useCallback(()=>{if(!cDur)return;const e={date:cDate||today,type:cType,duration:+cDur,avgHR:+cHR||null,config:cType==="hiit"?cConf:"",...(+cDist?{distance:+cDist}:{}),...(cZones.some(z=>+z>0)?{zones:cZones.map(z=>+z||0)}:{}),time:new Date().toISOString()};
+  const addCardio=useCallback(()=>{const durMin=(+cH||0)*60+(+cM||0)+(+cS||0)/60;if(!durMin)return;const e={date:cDate||today,type:cType,duration:durMin,avgHR:+cHR||null,config:cType==="hiit"?cConf:"",...(+cDist?{distance:+cDist}:{}),...(cZones.some(z=>+z>0)?{zones:cZones.map(z=>+z||0)}:{}),time:new Date().toISOString()};
     e.burn=cardioBurn(e,latestBW,profile.age,profile.sex);
-    setCardioData(p=>{const n=[...p,e].slice(-500);sv(SK.cardio,n);return n;});setCDur("");setCHR("");setCConf("");setCDist("");setCZones(["","","","",""]);setCDate(today);},[cType,cDur,cHR,cConf,cDist,cZones,cDate,today,latestBW,profile.age,profile.sex]);
+    setCardioData(p=>{const n=[...p,e].slice(-500);sv(SK.cardio,n);return n;});setCH("");setCM("");setCS("");setCHR("");setCConf("");setCDist("");setCZones(["","","","",""]);setCDate(today);},[cType,cH,cM,cS,cHR,cConf,cDist,cZones,cDate,today,latestBW,profile.age,profile.sex]);
   const delCardio=useCallback(time=>{setCardioData(p=>{const n=p.filter(e=>e.time!==time);sv(SK.cardio,n);return n;});},[]);
   const clearAllData=useCallback(()=>{setConfirmClear(false);
     Object.values(SK).forEach(k=>localStorage.removeItem(k));localStorage.removeItem(SK.accLog+"_prog");
@@ -1269,22 +1271,27 @@ export default function App(){
         <div style={{display:"flex",gap:6,marginBottom:6}}>
           {[["steady","Steady"],["hiit","HIIT"],["rowing","Rowing"]].map(([t,l])=><button type="button" key={t} className={`daytype${cType===t?" on":""}`} onClick={()=>setCType(t)}>{l}</button>)}
         </div>
-        <div className="grid3">
-          <input className="in sm" type="number" inputMode="numeric" placeholder="min" value={cDur} onChange={e=>setCDur(e.target.value)} style={{flex:1}}/>
-          <input className="in sm" type="number" inputMode="numeric" placeholder="avg HR" value={cHR} onChange={e=>setCHR(e.target.value)} style={{flex:1}}/>
+        <div style={{display:"flex",gap:5,alignItems:"center",marginBottom:6}}>
+          <span style={{fontFamily:mono,fontSize:10,color:C.dim,flexShrink:0}}>time</span>
+          <input className="in sm" type="number" inputMode="numeric" placeholder="h" value={cH} onChange={e=>setCH(e.target.value)} style={{flex:1,minWidth:0}}/>
+          <span style={{color:C.dim,fontFamily:mono}}>:</span>
+          <input className="in sm" type="number" inputMode="numeric" placeholder="m" value={cM} onChange={e=>setCM(e.target.value)} style={{flex:1,minWidth:0}}/>
+          <span style={{color:C.dim,fontFamily:mono}}>:</span>
+          <input className="in sm" type="number" inputMode="numeric" placeholder="s" value={cS} onChange={e=>setCS(e.target.value)} style={{flex:1,minWidth:0}}/>
         </div>
+        <input className="in sm" type="number" inputMode="numeric" placeholder="avg HR" value={cHR} onChange={e=>setCHR(e.target.value)} style={{width:"100%",marginBottom:6}}/>
         <input className="in sm" type="number" inputMode="decimal" placeholder="distance (m)" value={cDist} onChange={e=>setCDist(e.target.value)} style={{width:"100%",marginBottom:6}}/>
         <div style={{display:"flex",gap:5,alignItems:"center",marginBottom:6}}>
           <span style={{fontFamily:mono,fontSize:10,color:C.dim,flexShrink:0}}>min in Z</span>
           {[0,1,2,3,4].map(i=><input key={i} className="in sm" type="number" inputMode="numeric" placeholder={`Z${i+1}`} value={cZones[i]} onChange={e=>setCZones(z=>z.map((v,j)=>j===i?e.target.value:v))} style={{flex:1,minWidth:0,textAlign:"center"}}/>)}
         </div>
         {cType==="hiit"&&<input className="in sm" type="text" placeholder="config · 4x4min @175bpm" value={cConf} onChange={e=>setCConf(e.target.value)} style={{width:"100%",marginBottom:6}}/>}
-        {cDur&&(cHR||cZones.some(z=>+z>0))&&(()=>{const byZone=cZones.some(z=>+z>0);const b=cardioBurn({avgHR:cHR,duration:cDur,type:cType,zones:cZones.map(z=>+z||0)},latestBW,profile.age,profile.sex);
+        {(()=>{const durMin=(+cH||0)*60+(+cM||0)+(+cS||0)/60;if(!(durMin>0&&(cHR||cZones.some(z=>+z>0))))return null;const byZone=cZones.some(z=>+z>0);const b=cardioBurn({avgHR:cHR,duration:durMin,type:cType,zones:cZones.map(z=>+z||0)},latestBW,profile.age,profile.sex);
           return<div style={{fontFamily:mono,fontSize:12,color:b?C.go:C.dim,marginBottom:6}}>{b?`~${b} cal${byZone?" · by zone":""}${cType==="hiit"?" · incl EPOC":""}`:"log body weight for burn estimate"}</div>;})()}
         <button className="btn btn-go" style={{width:"100%",height:44,fontSize:13}} onClick={addCardio}>Log cardio</button>
         {cardioData.length>0&&<div style={{marginTop:8}}>
           {cardioData.slice(-5).reverse().map((e,i)=><div key={i} className="entry">
-            <span>{e.date} · {e.type} {e.duration}min {e.avgHR&&`· HR ${e.avgHR}`}{(()=>{const b=e.burn!=null?e.burn:cardioBurn(e,latestBW,profile.age,profile.sex);return b?` · ~${b} cal`:"";})()}{cardioExtra(e)} {e.config&&<span style={{color:C.dim}}>({e.config})</span>}</span>
+            <span>{e.date} · {e.type} {fmtDur(e.duration)} {e.avgHR&&`· HR ${e.avgHR}`}{(()=>{const b=e.burn!=null?e.burn:cardioBurn(e,latestBW,profile.age,profile.sex);return b?` · ~${b} cal`:"";})()}{cardioExtra(e)} {e.config&&<span style={{color:C.dim}}>({e.config})</span>}</span>
             <button className="x" onClick={()=>delCardio(e.time||e.date)}>✕</button>
           </div>)}
         </div>}
@@ -1434,7 +1441,7 @@ export default function App(){
       {cardioData.length===0?<div className="empty">No cardio yet</div>:
         <div className="card">
           {cardioData.slice(-10).reverse().map((e,i)=><div key={i} className="entry">
-            <span>{e.date} · {e.type} {e.duration}min {e.avgHR&&`· HR ${e.avgHR}`}{(()=>{const b=e.burn!=null?e.burn:cardioBurn(e,latestBW,profile.age,profile.sex);return b?` · ~${b} cal`:"";})()}{cardioExtra(e)} {e.config&&<span style={{color:C.dim}}>({e.config})</span>}</span>
+            <span>{e.date} · {e.type} {fmtDur(e.duration)} {e.avgHR&&`· HR ${e.avgHR}`}{(()=>{const b=e.burn!=null?e.burn:cardioBurn(e,latestBW,profile.age,profile.sex);return b?` · ~${b} cal`:"";})()}{cardioExtra(e)} {e.config&&<span style={{color:C.dim}}>({e.config})</span>}</span>
           </div>)}
         </div>}
 
