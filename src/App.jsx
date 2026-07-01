@@ -181,12 +181,24 @@ function keytelCpm(hr,kg,age,sex){
     :(-55.0969+0.6309*hr+0.1988*kg+0.2017*age)/4.184;
   return Math.max(0,v);
 }
-// Steady-state burn from avg HR + duration; HIIT adds ~15% EPOC (cut-tracker convention).
-// weightLb is current scale weight; entries lacking HR or weight return null.
+// HR-zone metabolic cost, kcal/kg/hr for Z1..Z5. Zones are set against the user's OWN max HR on their
+// device, so intensity is already personalized; the same %HRmax costs ~the same METs across modalities
+// (HR reflects cardiovascular load), so one set covers rowing/steady/etc. Tunable.
+const ZONE_MET=[4,6,8,10,13];
+// Cardio calories. PREFERS logged zone-time (the intensity distribution): kcal = sum(zone-min * zoneMET *
+// kg / 60). That tracks how a chest strap integrates HR far better than one avg-HR number and pulls
+// fit-athlete estimates down toward their device. Falls back to avg-HR Keytel only when no zones logged.
+// HIIT keeps the ~15% EPOC bump either way (post-session cost the during-session math misses). Needs a
+// bodyweight plus either zones or HR; else null.
 function cardioBurn(e,weightLb,age,sex){
-  if(!e||!e.avgHR)return null;
+  if(!e)return null;
   const kg=(+weightLb||0)*0.4536;
   if(!kg)return null;
+  if(e.zones&&e.zones.some(z=>+z>0)){
+    let k=0;e.zones.forEach((z,i)=>{k+=(+z||0)*(ZONE_MET[i]||0)*kg/60;});
+    return Math.round(e.type==="hiit"?k*1.15:k);
+  }
+  if(!e.avgHR)return null;
   const base=keytelCpm(+e.avgHR,kg,+age||0,sex)*(+e.duration||0);
   return Math.round(e.type==="hiit"?base*1.15:base);
 }
@@ -1267,8 +1279,8 @@ export default function App(){
           {[0,1,2,3,4].map(i=><input key={i} className="in sm" type="number" inputMode="numeric" placeholder={`Z${i+1}`} value={cZones[i]} onChange={e=>setCZones(z=>z.map((v,j)=>j===i?e.target.value:v))} style={{flex:1,minWidth:0,textAlign:"center"}}/>)}
         </div>
         {cType==="hiit"&&<input className="in sm" type="text" placeholder="config · 4x4min @175bpm" value={cConf} onChange={e=>setCConf(e.target.value)} style={{width:"100%",marginBottom:6}}/>}
-        {cDur&&cHR&&(()=>{const b=cardioBurn({avgHR:cHR,duration:cDur,type:cType},latestBW,profile.age,profile.sex);
-          return<div style={{fontFamily:mono,fontSize:12,color:b?C.go:C.dim,marginBottom:6}}>{b?`~${b} cal${cType==="hiit"?" · incl EPOC":""}`:"log body weight for burn estimate"}</div>;})()}
+        {cDur&&(cHR||cZones.some(z=>+z>0))&&(()=>{const byZone=cZones.some(z=>+z>0);const b=cardioBurn({avgHR:cHR,duration:cDur,type:cType,zones:cZones.map(z=>+z||0)},latestBW,profile.age,profile.sex);
+          return<div style={{fontFamily:mono,fontSize:12,color:b?C.go:C.dim,marginBottom:6}}>{b?`~${b} cal${byZone?" · by zone":""}${cType==="hiit"?" · incl EPOC":""}`:"log body weight for burn estimate"}</div>;})()}
         <button className="btn btn-go" style={{width:"100%",height:44,fontSize:13}} onClick={addCardio}>Log cardio</button>
         {cardioData.length>0&&<div style={{marginTop:8}}>
           {cardioData.slice(-5).reverse().map((e,i)=><div key={i} className="entry">
