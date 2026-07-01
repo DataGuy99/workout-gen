@@ -317,3 +317,40 @@ over the lookback); whether to add a single "week on track?" headline above the 
 - An earlier 4-phase data spec was completed; **this brief supersedes it** for what comes next.
 - When resuming: confirm the working tree is clean and `main` is at the latest commit, then start
   with §6.1, following the §2 cadence end to end.
+
+## 9. PROVISIONED SPECS (locked 2025-07-01) — build order 1 → 2 → 3
+
+### 9.1 Cardio duration as H:M:S  [BUILT this session]
+Single "min" field replaced with three inputs H : M : S (colon display via `fmtDur`, e.g. `1:05:30`;
+`M:SS` under an hour). `duration` stored as FRACTIONAL MINUTES (`h*60 + m + s/60`) so Keytel, rowing
+pace, and MET-hours (all per-minute) are untouched. Old integer-minute entries render fine. Zones stay
+in minutes.
+
+### 9.2 Custom exercise with muscle involvement  [NEXT]
+User defines a custom exercise: name · category (one of the 4 catalog cats: **pull / push / legs /
+core**) · muscle-involvement rows. NO anchor-vs-accessory toggle — defined once, joins the full
+`EXERCISES` pool, available BOTH in accessory search (by muscle) and the anchor-slot picker (by cat);
+muscle-group definition is what drives volume regardless of where it's used. Muscle picker is a custom
+overlay (DatePicker-style, no native dropdown) over the 12 groups (chest, back, shoulders — NO separate
+delt heads — biceps, triceps, quads, hamstrings, glutes, calves, core, traps, forearms). Involvement is
+a DISTRIBUTION that MUST sum to 100 (verified: all 104 catalog moves sum to exactly 100; each hard set
+credits `pct/100` per muscle = 1.0 total, so 100 keeps every move's per-set volume comparable). UI shows
+a live running total and normalizes to 100 on save (displaying the result, no surprise). Store all
+involvement in `p` (`s:[]`) — volume math flattens `p+s`. Persist to a new SK key merged into EXERCISES
+at load; shape `{name,cat,p,s:[],bw,eq,custom:true}`. Create + manage (edit/delete) live in the
+accessory-search UI ("+ Add custom"; custom entries carry an edit/delete affordance).
+
+### 9.3 Trends reorg — sections IN-TAB  [AFTER 9.2]
+NOT the Lift-page carousel — that waits for the later overhaul. Reorganize the flat Trends scroll into
+clear ordered sections with headers:
+- **LIFT**: MEV bars, tonnage (collapse the two charts → ONE, fix the swapped label), strength index,
+  anchor progression, lift sessions w/ per-session tonnage.
+- **CARDIO**: kcal/week, MET-hours, HR trend, cardio sessions w/ duration + kcal + zones.
+- **RECORDED**: weight trend, body measurements.
+- **INSIGHTS**: body-composition verdict + cross-domain correlations (balance↔strength, cardio↔weight);
+  relax the ≥4-aligned-weeks gate so they show sooner.
+Leave the LIFT PAGE untouched for now (it still has its own MEV bar → the Lift/Trends MEV duplication is
+knowingly deferred). Absorbs stragglers: tonnage dedup + swapped label, insight gate, per-session values.
+FUTURE (later overhaul): a Lift page showing lift data by default (anchor segments + accessories at the
+bottom) with a collapsible "insights" dropdown arrow; same per-domain dropdown for cardio and body. The
+in-Trends sections are the stepping stone to that.
