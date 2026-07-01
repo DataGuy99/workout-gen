@@ -343,12 +343,14 @@ accessory-search UI ("+ Add custom"; custom entries carry an edit/delete afforda
 ### 9.3 Trends reorg — sections IN-TAB  [AFTER 9.2]
 NOT the Lift-page carousel — that waits for the later overhaul. Reorganize the flat Trends scroll into
 clear ordered sections with headers:
-- **LIFT**: MEV bars, tonnage (collapse the two charts → ONE, fix the swapped label), strength index,
-  anchor progression, lift sessions w/ per-session tonnage.
-- **CARDIO**: kcal/week, MET-hours, HR trend, cardio sessions w/ duration + kcal + zones.
-- **RECORDED**: weight trend, body measurements.
-- **INSIGHTS**: body-composition verdict + cross-domain correlations (balance↔strength, cardio↔weight);
-  relax the ≥4-aligned-weeks gate so they show sooner.
+(Owner categorization, 2025-07-01:)
+- **LIFT**: session history · MEV weekly volume (hard sets) · weekly tonnage — collapse the TWO current
+  charts (Weekly Tonnage anchor-only + Training Volume total, STILL both present) into ONE + fix the
+  swapped label · strength index · anchor progression.
+- **CARDIO**: cardio session list · cardio load (weekly kcal) · MET-hours/wk · avg HR trend.
+- **BODY**: weight trend · slope (waist/navel) · measurements · calorie balance (net vs target).
+- **INSIGHTS** (owner def = anything DERIVED/extrapolated from 2+ sources): body composition (waist+weight)
+  · balance↔strength · cardio↔weight · balance↔weight. Relax the ≥4-aligned-weeks gate so they show sooner.
 Leave the LIFT PAGE untouched for now (it still has its own MEV bar → the Lift/Trends MEV duplication is
 knowingly deferred). Absorbs stragglers: tonnage dedup + swapped label, insight gate, per-session values.
 FUTURE (later overhaul): a Lift page showing lift data by default (anchor segments + accessories at the
